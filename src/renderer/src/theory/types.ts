@@ -7,10 +7,16 @@ export type UserSelection = {
 
 // ムードボタンの識別子
 export type MoodId = 'happy' | 'night' | 'rain' | 'spring' | 'random'
+// 実際の曲データが存在するムード（'random' は除外）
+export type RealMoodId = Exclude<MoodId, 'random'>
 
 // ComposerEngine への入力
 export type UserIntent = {
   mood: MoodId
+  // Phase4以降に解放される選択肢（未指定時はComposerEngineが自動決定）
+  chordProgressionId?: string
+  tempo?: number
+  instrumentPresetId?: string
 }
 
 // コード進行

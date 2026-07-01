@@ -4,12 +4,31 @@ import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
 
 type Status = 'idle' | 'playing' | 'done'
+type Screen = 'home' | 'stepup'
 
 const MOODS: { emoji: string; label: string; id: MoodId }[] = [
   { emoji: '😊', label: '元気',    id: 'happy'  },
   { emoji: '🌙', label: '夜',      id: 'night'  },
   { emoji: '🌧', label: '雨',      id: 'rain'   },
   { emoji: '🌸', label: '春',      id: 'spring' },
+]
+
+const STEPUP_CARDS = [
+  {
+    emoji: '🎵',
+    title: '曲の流れを選ぶ',
+    desc: '最初から最後まで、どんな雰囲気で進むかを自分で決められます',
+  },
+  {
+    emoji: '🕐',
+    title: '曲の速さを選ぶ',
+    desc: 'ゆったりした曲にするか、テンポよく弾む曲にするかを調整できます',
+  },
+  {
+    emoji: '🎸',
+    title: '楽器を選ぶ',
+    desc: 'ピアノ・ギター・シンセなど、音の雰囲気をがらりと変えられます',
+  },
 ]
 
 const CSS = `
@@ -19,6 +38,11 @@ const CSS = `
   @keyframes breathe {
     0%, 100% { opacity: 1;   transform: scale(1); }
     50%       { opacity: 0.5; transform: scale(0.96); }
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
   .mood-btn {
@@ -53,14 +77,34 @@ const CSS = `
     transition-duration: 0.07s;
   }
 
-  .stop-btn:hover  { background: rgba(220, 38, 38, 0.25)   !important; }
-  .retry-btn:hover { background: rgba(139, 92, 246, 0.25)  !important; }
+  .stop-btn:hover    { background: rgba(220, 38, 38, 0.25)    !important; }
+  .retry-btn:hover   { background: rgba(139, 92, 246, 0.25)   !important; }
+  .stepup-btn:hover  { background: rgba(250, 204, 21, 0.15)   !important; border-color: rgba(250, 204, 21, 0.6) !important; color: #fde68a !important; }
+  .back-btn:hover    { background: rgba(255, 255, 255, 0.08)  !important; }
+
+  .stepup-card {
+    animation: fadeInUp 0.4s ease both;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1.5px solid rgba(255, 255, 255, 0.09);
+    border-radius: 20px;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stepup-card:nth-child(1) { animation-delay: 0.05s; }
+  .stepup-card:nth-child(2) { animation-delay: 0.12s; }
+  .stepup-card:nth-child(3) { animation-delay: 0.19s; }
 
   .breathing { animation: breathe 1.5s ease-in-out infinite; }
 `
 
 export default function App(): JSX.Element {
   const [status, setStatus] = useState<Status>('idle')
+  const [screen, setScreen] = useState<Screen>('home')
 
   useEffect(() => {
     const offPlay = playbackEngine.on('play', () => setStatus('playing'))
@@ -78,6 +122,7 @@ export default function App(): JSX.Element {
     playbackEngine.stop()
   }
 
+  // ── 再生中 ──────────────────────────────────────────────────────
   if (status === 'playing') {
     return (
       <>
@@ -92,6 +137,7 @@ export default function App(): JSX.Element {
     )
   }
 
+  // ── 完成 ────────────────────────────────────────────────────────
   if (status === 'done') {
     return (
       <>
@@ -107,10 +153,50 @@ export default function App(): JSX.Element {
     )
   }
 
+  // ── ステップアップ画面 ──────────────────────────────────────────
+  if (screen === 'stepup') {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={s.root}>
+          <div style={s.stepupHeader}>
+            <button className="back-btn" onClick={() => setScreen('home')} style={s.backBtn}>
+              ← もどる
+            </button>
+            <h2 style={s.stepupTitle}>🎓 ステップアップ</h2>
+            <p style={s.stepupSubtitle}>慣れてきたら、少しずつ自分でカスタマイズできます</p>
+          </div>
+
+          <div style={s.cardList}>
+            {STEPUP_CARDS.map((card, i) => (
+              <div key={i} className="stepup-card">
+                <div style={s.cardTop}>
+                  <span style={s.cardEmoji}>{card.emoji}</span>
+                  <span style={s.cardTitle}>{card.title}</span>
+                  <span style={s.comingSoon}>Coming Soon</span>
+                </div>
+                <p style={s.cardDesc}>{card.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // ── ホーム画面 ──────────────────────────────────────────────────
   return (
     <>
       <style>{CSS}</style>
       <div style={s.root}>
+        <button
+          className="stepup-btn"
+          onClick={() => setScreen('stepup')}
+          style={s.stepupEntryBtn}
+        >
+          🎓 ステップアップ
+        </button>
+
         <header style={s.header}>
           <h1 style={s.title}>First Song</h1>
           <p style={s.question}>今日はどんな曲を作りますか？</p>
@@ -150,6 +236,7 @@ const s = {
     gap: '14px',
     fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
     color: '#fff',
+    position: 'relative' as const,
   },
   header: {
     textAlign: 'center' as const,
@@ -188,6 +275,99 @@ const s = {
     fontSize: '2rem',
     lineHeight: 1,
   },
+  // ステップアップ入口ボタン（右上、目立たせすぎない）
+  stepupEntryBtn: {
+    position: 'absolute' as const,
+    top: '20px',
+    right: '20px',
+    padding: '8px 16px',
+    fontSize: '0.78rem',
+    fontWeight: 600,
+    background: 'rgba(250, 204, 21, 0.07)',
+    border: '1.5px solid rgba(250, 204, 21, 0.28)',
+    borderRadius: '20px',
+    color: 'rgba(253, 230, 138, 0.7)',
+    cursor: 'pointer',
+    letterSpacing: '0.04em',
+    transition: 'background 0.2s, border-color 0.2s, color 0.2s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+  },
+  // ── ステップアップ画面 ──
+  stepupHeader: {
+    textAlign: 'center' as const,
+    marginBottom: '8px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: '10px',
+  },
+  backBtn: {
+    alignSelf: 'flex-start' as const,
+    padding: '8px 16px',
+    fontSize: '0.88rem',
+    fontWeight: 600,
+    background: 'rgba(255, 255, 255, 0.04)',
+    border: '1.5px solid rgba(255, 255, 255, 0.12)',
+    borderRadius: '14px',
+    color: '#9ca3af',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+    letterSpacing: '0.04em',
+  },
+  stepupTitle: {
+    fontSize: '1.6rem',
+    fontWeight: 800,
+    letterSpacing: '-0.01em',
+    color: '#fde68a',
+  },
+  stepupSubtitle: {
+    fontSize: '0.9rem',
+    color: '#6b7280',
+    letterSpacing: '0.02em',
+  },
+  cardList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '12px',
+    width: '100%',
+    maxWidth: '400px',
+    marginTop: '8px',
+  },
+  cardTop: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  cardEmoji: {
+    fontSize: '1.5rem',
+    lineHeight: 1,
+  },
+  cardTitle: {
+    fontSize: '1.0rem',
+    fontWeight: 700,
+    color: '#e5e7eb',
+    flex: 1,
+  },
+  comingSoon: {
+    fontSize: '0.68rem',
+    fontWeight: 700,
+    letterSpacing: '0.06em',
+    color: '#6b7280',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    padding: '3px 8px',
+    textTransform: 'uppercase' as const,
+  },
+  cardDesc: {
+    fontSize: '0.85rem',
+    color: '#6b7280',
+    lineHeight: 1.6,
+    letterSpacing: '0.02em',
+    paddingLeft: '2px',
+  },
+  // ── 再生中・完成 ──
   playingText: {
     fontSize: '2rem',
     fontWeight: 700,

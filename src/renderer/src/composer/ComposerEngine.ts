@@ -1,24 +1,23 @@
-import type { SongBlueprint, UserIntent } from '../theory/types'
-import { happySong }  from '../audio/sampleSongs/happy'
-import { nightSong }  from '../audio/sampleSongs/night'
-import { rainSong }   from '../audio/sampleSongs/rain'
-import { springSong } from '../audio/sampleSongs/spring'
+import type { UserIntent, SongBlueprint, RealMoodId } from '../theory/types'
+import { moods }    from '../data/music/moods'
+import { Selector } from './Selector'
+import { generate } from './Generator'
 
-const SONG_MAP: Record<string, SongBlueprint> = {
-  happy:  happySong,
-  night:  nightSong,
-  rain:   rainSong,
-  spring: springSong,
-}
+const REAL_MOODS: RealMoodId[] = ['happy', 'night', 'rain', 'spring']
 
-const ALL = Object.values(SONG_MAP)
-
+// 「選択」と「生成」を Selector / Generator に委譲するオーケストレーター
 export class ComposerEngine {
+  private selector = new Selector()
+
   compose(intent: UserIntent): SongBlueprint {
-    if (intent.mood === 'random') {
-      return ALL[Math.floor(Math.random() * ALL.length)]
-    }
-    return SONG_MAP[intent.mood] ?? happySong
+    const moodId: RealMoodId =
+      intent.mood === 'random'
+        ? REAL_MOODS[Math.floor(Math.random() * REAL_MOODS.length)]
+        : intent.mood
+
+    const mood      = moods[moodId]
+    const selection = this.selector.select(mood)   // 重み付き抽選
+    return generate(mood, selection)               // 純粋な組み立て
   }
 }
 
