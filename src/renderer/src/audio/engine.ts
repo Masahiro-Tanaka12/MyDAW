@@ -1,14 +1,18 @@
 import * as Tone from 'tone'
 import type { PlaybackEventMap, SongBlueprint, TrackData } from '../theory/types'
 import { ChordPlayer } from './players/ChordPlayer'
+import { BassPlayer }  from './players/BassPlayer'
+import { DrumPlayer }  from './players/DrumPlayer'
 
 type Handler<K extends keyof PlaybackEventMap> = (
   payload: PlaybackEventMap[K]
 ) => void
 
 export class PlaybackEngine {
-  private handlers = new Map<string, Handler<keyof PlaybackEventMap>[]>()
+  private handlers    = new Map<string, Handler<keyof PlaybackEventMap>[]>()
   private chordPlayer = new ChordPlayer()
+  private bassPlayer  = new BassPlayer()
+  private drumPlayer  = new DrumPlayer()
   private endTimer: ReturnType<typeof setTimeout> | null = null
 
   on<K extends keyof PlaybackEventMap>(
@@ -40,6 +44,8 @@ export class PlaybackEngine {
       this.endTimer = null
     }
     this.chordPlayer.dispose()
+    this.bassPlayer.dispose()
+    this.drumPlayer.dispose()
   }
 
   async play(blueprint: SongBlueprint): Promise<void> {
@@ -54,8 +60,12 @@ export class PlaybackEngine {
     for (const track of blueprint.tracks) {
       if (track.kind === 'chord') {
         this.chordPlayer.schedule(track)
+      } else if (track.kind === 'bass') {
+        this.bassPlayer.schedule(track)
+      } else if (track.kind === 'drum') {
+        this.drumPlayer.schedule(track)
       }
-      // melody / bass / drum は Phase2以降に追加
+      // melody は Phase2.3以降
     }
 
     Tone.getTransport().start()
@@ -80,7 +90,6 @@ export class PlaybackEngine {
     Tone.getTransport().bpm.value = bpm
   }
 
-  // Phase 2 で実装: 全トラック（melody/chord/bass/drum）をロード
   async load(_tracks: TrackData[], _bpm: number): Promise<void> {
     this.emit('load', {})
   }

@@ -57,11 +57,13 @@ export type MelodyTrack = {
 
 export type BassTrack = {
   kind:     'bass'
+  notes:    NoteEvent[]
   presetId: string
 }
 
 export type DrumTrack = {
   kind:     'drum'
+  notes:    NoteEvent[]
   presetId: string
 }
 
