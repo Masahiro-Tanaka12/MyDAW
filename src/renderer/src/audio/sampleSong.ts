@@ -19,4 +19,15 @@ export const sampleSong: SongBlueprint = {
     bass:   'bass_pluck',
     drum:   'drum_standard',
   },
+  tracks: [
+    {
+      kind:     'chord',
+      presetId: 'pad_warm',
+      progression: {
+        id:     'sample_pop_c_major',
+        chords: ['C', 'G', 'Am', 'F'],
+        bars:   4,
+      },
+    },
+  ],
 }

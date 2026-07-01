@@ -5,6 +5,14 @@ export type UserSelection = {
   scene: string  // "morning" | "night" | "drive" | "relax"
 }
 
+// ムードボタンの識別子
+export type MoodId = 'happy' | 'night' | 'rain' | 'spring' | 'random'
+
+// ComposerEngine への入力
+export type UserIntent = {
+  mood: MoodId
+}
+
 // コード進行
 export type ChordProgression = {
   id:     string    // "pop_basic_01"
@@ -32,6 +40,33 @@ export type InstrumentMap = {
   drum:   string
 }
 
+// ─── トラック層（Phase2〜順次実装） ───────────────────────────────────────
+
+export type ChordTrack = {
+  kind:      'chord'
+  progression: ChordProgression
+  presetId:  string
+}
+
+// Phase2以降 型のみ定義
+export type MelodyTrack = {
+  kind:     'melody'
+  pattern:  MelodyPattern
+  presetId: string
+}
+
+export type BassTrack = {
+  kind:     'bass'
+  presetId: string
+}
+
+export type DrumTrack = {
+  kind:     'drum'
+  presetId: string
+}
+
+export type TrackLayer = ChordTrack | MelodyTrack | BassTrack | DrumTrack
+
 // ComposerEngine が生成する曲設計図
 export type SongBlueprint = {
   chordProgression: ChordProgression
@@ -40,6 +75,7 @@ export type SongBlueprint = {
   key:              string   // "C" | "G" | "Am" ...
   scale:            string   // "major" | "minor"
   instrumentMap:    InstrumentMap
+  tracks:           TrackLayer[]
 }
 
 // スコアリング重み（初心者は触らない。Phase3以降のチューニング用）
