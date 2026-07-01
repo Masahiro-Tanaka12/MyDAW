@@ -1,6 +1,6 @@
 import type { SongBlueprint } from '../theory/types'
 
-export const sampleSong: SongBlueprint = {
+export const sampleSong: Omit<SongBlueprint, 'seed' | 'moodId'> = {
   chordProgression: {
     id: 'sample_pop_c_major',
     chords: ['C', 'G', 'Am', 'F'],

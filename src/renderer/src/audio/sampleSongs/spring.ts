@@ -1,6 +1,6 @@
-import type { SongBlueprint } from '../../theory/types'
+﻿import type { SongBlueprint } from '../../theory/types'
 
-export const springSong: SongBlueprint = {
+export const springSong: Omit<SongBlueprint, 'seed' | 'moodId'> = {
   bpm: 108,
   key: 'G',
   scale: 'major',
@@ -55,3 +55,4 @@ export const springSong: SongBlueprint = {
     },
   ],
 }
+

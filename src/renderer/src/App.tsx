@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { MoodId } from './theory/types'
+import type { MoodId, RealMoodId, SongBlueprint, SavedSong } from './theory/types'
 import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
+import { SongRepository } from './repository/SongRepository'
 
 type Status = 'idle' | 'playing' | 'done'
-type Screen = 'home' | 'stepup'
+type Screen = 'home' | 'stepup' | 'mysongs'
 
 const MOODS: { emoji: string; label: string; id: MoodId }[] = [
   { emoji: '😊', label: '元気',    id: 'happy'  },
@@ -12,6 +13,13 @@ const MOODS: { emoji: string; label: string; id: MoodId }[] = [
   { emoji: '🌧', label: '雨',      id: 'rain'   },
   { emoji: '🌸', label: '春',      id: 'spring' },
 ]
+
+const MOOD_MAP: Record<RealMoodId, { emoji: string; label: string }> = {
+  happy:  { emoji: '😊', label: '元気' },
+  night:  { emoji: '🌙', label: '夜'   },
+  rain:   { emoji: '🌧', label: '雨'   },
+  spring: { emoji: '🌸', label: '春'   },
+}
 
 const STEPUP_CARDS = [
   {
@@ -30,6 +38,11 @@ const STEPUP_CARDS = [
     desc: 'ピアノ・ギター・シンセなど、音の雰囲気をがらりと変えられます',
   },
 ]
+
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+}
 
 const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -77,10 +90,13 @@ const CSS = `
     transition-duration: 0.07s;
   }
 
-  .stop-btn:hover    { background: rgba(220, 38, 38, 0.25)    !important; }
-  .retry-btn:hover   { background: rgba(139, 92, 246, 0.25)   !important; }
-  .stepup-btn:hover  { background: rgba(250, 204, 21, 0.15)   !important; border-color: rgba(250, 204, 21, 0.6) !important; color: #fde68a !important; }
-  .back-btn:hover    { background: rgba(255, 255, 255, 0.08)  !important; }
+  .stop-btn:hover       { background: rgba(220, 38, 38, 0.25)    !important; }
+  .retry-btn:hover      { background: rgba(139, 92, 246, 0.25)   !important; }
+  .stepup-btn:hover     { background: rgba(250, 204, 21, 0.15)   !important; border-color: rgba(250, 204, 21, 0.6) !important; color: #fde68a !important; }
+  .mysongs-btn:hover    { background: rgba(52, 211, 153, 0.15)   !important; border-color: rgba(52, 211, 153, 0.6) !important; color: #6ee7b7 !important; }
+  .back-btn:hover       { background: rgba(255, 255, 255, 0.08)  !important; }
+  .save-btn:hover       { background: rgba(251, 191, 36, 0.3)    !important; }
+  .delete-song-btn:hover { background: rgba(220, 38, 38, 0.25)   !important; color: #fca5a5 !important; border-color: rgba(220, 38, 38, 0.6) !important; }
 
   .stepup-card {
     animation: fadeInUp 0.4s ease both;
@@ -99,12 +115,23 @@ const CSS = `
   .stepup-card:nth-child(2) { animation-delay: 0.12s; }
   .stepup-card:nth-child(3) { animation-delay: 0.19s; }
 
+  .song-card {
+    animation: fadeInUp 0.3s ease both;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1.5px solid rgba(255, 255, 255, 0.09);
+    border-radius: 18px;
+    padding: 16px 18px;
+  }
+
   .breathing { animation: breathe 1.5s ease-in-out infinite; }
 `
 
 export default function App(): JSX.Element {
-  const [status, setStatus] = useState<Status>('idle')
-  const [screen, setScreen] = useState<Screen>('home')
+  const [status, setStatus]               = useState<Status>('idle')
+  const [screen, setScreen]               = useState<Screen>('home')
+  const [lastBlueprint, setLastBlueprint] = useState<SongBlueprint | null>(null)
+  const [isSaved, setIsSaved]             = useState(false)
+  const [songs, setSongs]                 = useState<SavedSong[]>([])
 
   useEffect(() => {
     const offPlay = playbackEngine.on('play', () => setStatus('playing'))
@@ -115,11 +142,40 @@ export default function App(): JSX.Element {
 
   const handleSelect = async (mood: MoodId): Promise<void> => {
     const blueprint = composerEngine.compose({ mood })
+    setLastBlueprint(blueprint)
+    setIsSaved(false)
     await playbackEngine.play(blueprint)
   }
 
-  const handleStop = (): void => {
-    playbackEngine.stop()
+  const handleStop = (): void => { playbackEngine.stop() }
+
+  const handleRetry = (): void => { setStatus('idle') }
+
+  const handleSave = (): void => {
+    if (!lastBlueprint || isSaved) return
+    const { seed, moodId } = lastBlueprint
+    const seedSuffix = String(seed % 1000).padStart(3, '0')
+    const moodName   = moodId.charAt(0).toUpperCase() + moodId.slice(1)
+    const title      = `${moodName} #${seedSuffix}`
+    SongRepository.save({
+      id:        Date.now().toString(),
+      title,
+      createdAt: new Date().toISOString(),
+      seed,
+      mood:      moodId,
+      blueprint: lastBlueprint,
+    })
+    setIsSaved(true)
+  }
+
+  const handleOpenMySongs = (): void => {
+    setSongs(SongRepository.loadAll())
+    setScreen('mysongs')
+  }
+
+  const handleDeleteSong = (id: string): void => {
+    SongRepository.delete(id)
+    setSongs(prev => prev.filter(s => s.id !== id))
   }
 
   // ── 再生中 ──────────────────────────────────────────────────────
@@ -145,7 +201,18 @@ export default function App(): JSX.Element {
         <div style={s.root}>
           <p style={s.doneText}>🎉 できた！</p>
           <p style={s.doneSubText}>はじめての曲が完成しました</p>
-          <button className="retry-btn" onClick={() => setStatus('idle')} style={s.retryBtn}>
+
+          {isSaved ? (
+            <button disabled style={{...s.saveBtn, opacity: 0.45, cursor: 'default'}}>
+              ✅ 保存済み
+            </button>
+          ) : (
+            <button className="save-btn" onClick={handleSave} style={s.saveBtn}>
+              ⭐ 保存する
+            </button>
+          )}
+
+          <button className="retry-btn" onClick={handleRetry} style={s.retryBtn}>
             もう一度つくる
           </button>
         </div>
@@ -159,12 +226,12 @@ export default function App(): JSX.Element {
       <>
         <style>{CSS}</style>
         <div style={s.root}>
-          <div style={s.stepupHeader}>
+          <div style={s.subHeader}>
             <button className="back-btn" onClick={() => setScreen('home')} style={s.backBtn}>
               ← もどる
             </button>
             <h2 style={s.stepupTitle}>🎓 ステップアップ</h2>
-            <p style={s.stepupSubtitle}>慣れてきたら、少しずつ自分でカスタマイズできます</p>
+            <p style={s.subSubtitle}>慣れてきたら、少しずつ自分でカスタマイズできます</p>
           </div>
 
           <div style={s.cardList}>
@@ -184,11 +251,71 @@ export default function App(): JSX.Element {
     )
   }
 
+  // ── マイソング画面 ──────────────────────────────────────────────
+  if (screen === 'mysongs') {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={s.root}>
+          <div style={s.subHeader}>
+            <button className="back-btn" onClick={() => setScreen('home')} style={s.backBtn}>
+              ← もどる
+            </button>
+            <h2 style={{...s.stepupTitle, color: '#6ee7b7'}}>📚 マイソング</h2>
+            <p style={s.subSubtitle}>保存した曲の一覧</p>
+          </div>
+
+          {songs.length === 0 ? (
+            <div style={s.emptyState}>
+              <p style={s.emptyText}>まだ保存した曲がありません</p>
+              <p style={s.emptySubText}>最初の曲を作ってみよう！</p>
+            </div>
+          ) : (
+            <div style={s.songList}>
+              {songs.map((song, i) => (
+                <div
+                  key={song.id}
+                  className="song-card"
+                  style={{...s.songCard, animationDelay: `${i * 0.06}s`}}
+                >
+                  <div style={s.songCardRow}>
+                    <span style={s.songMoodEmoji}>{MOOD_MAP[song.mood].emoji}</span>
+                    <div style={s.songInfo}>
+                      <p style={s.songTitle}>{song.title}</p>
+                      <p style={s.songMeta}>
+                        {MOOD_MAP[song.mood].label}　{formatDate(song.createdAt)}
+                      </p>
+                    </div>
+                    <button
+                      className="delete-song-btn"
+                      onClick={() => handleDeleteSong(song.id)}
+                      style={s.deleteBtn}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
   // ── ホーム画面 ──────────────────────────────────────────────────
   return (
     <>
       <style>{CSS}</style>
       <div style={s.root}>
+        <button
+          className="mysongs-btn"
+          onClick={handleOpenMySongs}
+          style={s.mysongsEntryBtn}
+        >
+          📚 マイソング
+        </button>
+
         <button
           className="stepup-btn"
           onClick={() => setScreen('stepup')}
@@ -275,7 +402,7 @@ const s = {
     fontSize: '2rem',
     lineHeight: 1,
   },
-  // ステップアップ入口ボタン（右上、目立たせすぎない）
+  // ホーム画面：右上・左上の小ボタン
   stepupEntryBtn: {
     position: 'absolute' as const,
     top: '20px',
@@ -292,14 +419,32 @@ const s = {
     transition: 'background 0.2s, border-color 0.2s, color 0.2s',
     fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
   },
-  // ── ステップアップ画面 ──
-  stepupHeader: {
+  mysongsEntryBtn: {
+    position: 'absolute' as const,
+    top: '20px',
+    left: '20px',
+    padding: '8px 16px',
+    fontSize: '0.78rem',
+    fontWeight: 600,
+    background: 'rgba(52, 211, 153, 0.07)',
+    border: '1.5px solid rgba(52, 211, 153, 0.28)',
+    borderRadius: '20px',
+    color: 'rgba(110, 231, 183, 0.7)',
+    cursor: 'pointer',
+    letterSpacing: '0.04em',
+    transition: 'background 0.2s, border-color 0.2s, color 0.2s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+  },
+  // ── サブ画面共通ヘッダー ──
+  subHeader: {
     textAlign: 'center' as const,
     marginBottom: '8px',
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'center',
     gap: '10px',
+    width: '100%',
+    maxWidth: '400px',
   },
   backBtn: {
     alignSelf: 'flex-start' as const,
@@ -321,11 +466,12 @@ const s = {
     letterSpacing: '-0.01em',
     color: '#fde68a',
   },
-  stepupSubtitle: {
+  subSubtitle: {
     fontSize: '0.9rem',
     color: '#6b7280',
     letterSpacing: '0.02em',
   },
+  // ── ステップアップカード ──
   cardList: {
     display: 'flex',
     flexDirection: 'column' as const,
@@ -367,6 +513,73 @@ const s = {
     letterSpacing: '0.02em',
     paddingLeft: '2px',
   },
+  // ── マイソング一覧 ──
+  songList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '10px',
+    width: '100%',
+    maxWidth: '400px',
+    marginTop: '8px',
+  },
+  songCard: {
+    width: '100%',
+  },
+  songCardRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+  },
+  songMoodEmoji: {
+    fontSize: '1.8rem',
+    lineHeight: 1,
+    flexShrink: 0,
+  },
+  songInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  songTitle: {
+    fontSize: '1.0rem',
+    fontWeight: 700,
+    color: '#e5e7eb',
+    letterSpacing: '0.02em',
+  },
+  songMeta: {
+    fontSize: '0.78rem',
+    color: '#6b7280',
+    marginTop: '4px',
+    letterSpacing: '0.02em',
+  },
+  deleteBtn: {
+    flexShrink: 0,
+    padding: '6px 10px',
+    fontSize: '0.78rem',
+    fontWeight: 700,
+    background: 'rgba(255, 255, 255, 0.04)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    borderRadius: '10px',
+    color: '#6b7280',
+    cursor: 'pointer',
+    transition: 'background 0.2s, color 0.2s, border-color 0.2s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+  },
+  emptyState: {
+    textAlign: 'center' as const,
+    marginTop: '40px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '10px',
+  },
+  emptyText: {
+    fontSize: '1.05rem',
+    color: '#4b5563',
+    fontWeight: 600,
+  },
+  emptySubText: {
+    fontSize: '0.88rem',
+    color: '#374151',
+  },
   // ── 再生中・完成 ──
   playingText: {
     fontSize: '2rem',
@@ -398,8 +611,22 @@ const s = {
     color: '#6b7280',
     marginTop: '8px',
   },
+  saveBtn: {
+    marginTop: '24px',
+    padding: '14px 48px',
+    fontSize: '1.05rem',
+    fontWeight: 700,
+    background: 'rgba(251, 191, 36, 0.12)',
+    border: '1.5px solid rgba(251, 191, 36, 0.5)',
+    borderRadius: '16px',
+    color: '#fde68a',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+    letterSpacing: '0.04em',
+  },
   retryBtn: {
-    marginTop: '36px',
+    marginTop: '14px',
     padding: '16px 48px',
     fontSize: '1.05rem',
     fontWeight: 600,

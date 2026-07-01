@@ -10,14 +10,15 @@ export class ComposerEngine {
   private selector = new Selector()
 
   compose(intent: UserIntent): SongBlueprint {
+    const seed   = Math.floor(Math.random() * 1_000_000)
     const moodId: RealMoodId =
       intent.mood === 'random'
         ? REAL_MOODS[Math.floor(Math.random() * REAL_MOODS.length)]
         : intent.mood
 
     const mood      = moods[moodId]
-    const selection = this.selector.select(mood)   // 重み付き抽選
-    return generate(mood, selection)               // 純粋な組み立て
+    const selection = this.selector.select(mood)
+    return { ...generate(mood, selection), seed, moodId }
   }
 }
 

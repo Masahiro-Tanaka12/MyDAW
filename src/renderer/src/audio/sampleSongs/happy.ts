@@ -1,6 +1,6 @@
-import type { SongBlueprint } from '../../theory/types'
+﻿import type { SongBlueprint } from '../../theory/types'
 
-export const happySong: SongBlueprint = {
+export const happySong: Omit<SongBlueprint, 'seed' | 'moodId'> = {
   bpm: 132,
   key: 'C',
   scale: 'major',
@@ -55,3 +55,4 @@ export const happySong: SongBlueprint = {
     },
   ],
 }
+

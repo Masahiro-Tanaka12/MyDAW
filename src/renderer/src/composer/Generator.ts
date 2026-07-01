@@ -7,9 +7,9 @@ import { drumPatterns }        from '../data/music/drum-patterns'
 import { instrumentPresets }   from '../data/music/instrument-presets'
 
 // 「生成」の責務を担う純粋関数
-// SelectionSet（選ばれた ID 群）+ MoodRecord → SongBlueprint
+// SelectionSet（選ばれた ID 群）+ MoodRecord → SongBlueprint（seed/moodId は ComposerEngine が付与）
 // 副作用なし・同じ入力なら常に同じ出力（テスト容易）
-export function generate(mood: MoodRecord, selection: SelectionSet): SongBlueprint {
+export function generate(mood: MoodRecord, selection: SelectionSet): Omit<SongBlueprint, 'seed' | 'moodId'> {
   const prog   = progressions[selection.progressionId]
   const bass   = bassPatterns[selection.bassPatternId]
   const drum   = drumPatterns[selection.drumPatternId]

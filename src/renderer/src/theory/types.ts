@@ -77,6 +77,8 @@ export type TrackLayer = ChordTrack | MelodyTrack | BassTrack | DrumTrack
 
 // ComposerEngine が生成する曲設計図
 export type SongBlueprint = {
+  seed:             number       // compose() ごとに生成されるランダム値
+  moodId:           RealMoodId   // 実際に使われたムード（'random' 解決後）
   chordProgression: ChordProgression
   melodyPattern:    MelodyPattern
   bpm:              number
@@ -84,6 +86,16 @@ export type SongBlueprint = {
   scale:            string   // "major" | "minor"
   instrumentMap:    InstrumentMap
   tracks:           TrackLayer[]
+}
+
+// LocalStorage に保存する曲データ
+export type SavedSong = {
+  id:        string      // Date.now().toString()
+  title:     string      // "Happy #123"
+  createdAt: string      // ISO 8601
+  seed:      number
+  mood:      RealMoodId
+  blueprint: SongBlueprint
 }
 
 // スコアリング重み（初心者は触らない。Phase3以降のチューニング用）
