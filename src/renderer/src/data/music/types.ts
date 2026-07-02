@@ -14,8 +14,7 @@ export type ProgressionRecord = {
 
 export type BassPatternRecord = {
   id:    string
-  // Phase5時点: モードのキーに対して安全なノートを使用（全ノート同一キー内）
-  // Phase6以降: chordRoot からの相対パターンへ移行予定
+  // 現在: キー固定の絶対音程。今後コードルート相対音程へ移行予定
   notes: NoteEvent[]
 }
 

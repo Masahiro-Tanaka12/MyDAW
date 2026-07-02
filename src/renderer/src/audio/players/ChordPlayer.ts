@@ -23,10 +23,21 @@ function resolve(chord: string): string[] {
 }
 
 export class ChordPlayer {
-  private synth: Tone.PolySynth | null = null
+  private synth:  Tone.PolySynth | null = null
+  private reverb: Tone.Freeverb  | null = null
 
-  schedule(track: ChordTrack): void {
-    this.synth = new Tone.PolySynth(Tone.Synth).toDestination()
+  schedule(track: ChordTrack, output: Tone.Volume): void {
+    // 空間感を出す軽いリバーブ
+    this.reverb = new Tone.Freeverb({ roomSize: 0.5, dampening: 4500, wet: 0.3 })
+
+    // ウォームなサイン波パッド。音量を絞ってベース・ドラムとのバランスを確保
+    this.synth = new Tone.PolySynth(Tone.Synth, {
+      volume: -10,
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.3, decay: 0.2, sustain: 0.7, release: 2.5 },
+    })
+    this.synth.chain(this.reverb, output)
+
     const { chords, bars } = track.progression
     const barsPerChord = bars / chords.length
 
@@ -40,6 +51,8 @@ export class ChordPlayer {
 
   dispose(): void {
     this.synth?.dispose()
-    this.synth = null
+    this.reverb?.dispose()
+    this.synth  = null
+    this.reverb = null
   }
 }

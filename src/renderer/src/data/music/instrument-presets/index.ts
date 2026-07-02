@@ -1,7 +1,6 @@
 import type { InstrumentPresetRecord } from '../types'
 
-// Phase4.1: 全ムード共通の1プリセット
-// Phase5以降: 楽器選択UIと連動して複数プリセットを追加予定
+// 現在は全ムード共通の1プリセット。楽器選択UI実装時に拡充予定
 export const instrumentPresets: Record<string, InstrumentPresetRecord> = {
   preset_default: {
     id:             'preset_default',
