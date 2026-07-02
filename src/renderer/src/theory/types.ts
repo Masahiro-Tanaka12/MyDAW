@@ -90,12 +90,13 @@ export type SongBlueprint = {
 
 // LocalStorage に保存する曲データ
 export type SavedSong = {
-  id:        string      // Date.now().toString()
-  title:     string      // "Happy #123"
-  createdAt: string      // ISO 8601
-  seed:      number
-  mood:      RealMoodId
-  blueprint: SongBlueprint
+  id:         string      // Date.now().toString()
+  title:      string      // "Happy #123"
+  createdAt:  string      // ISO 8601
+  updatedAt?: string      // タイトル編集時に更新（旧データとの互換のためオプショナル）
+  seed:       number
+  mood:       RealMoodId
+  blueprint:  SongBlueprint
 }
 
 // スコアリング重み（初心者は触らない。Phase3以降のチューニング用）

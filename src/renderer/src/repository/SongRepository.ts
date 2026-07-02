@@ -18,6 +18,15 @@ export const SongRepository = {
     }
   },
 
+  update(id: string, title: string): void {
+    const all = this.loadAll().map(s =>
+      s.id === id
+        ? { ...s, title, updatedAt: new Date().toISOString() }
+        : s
+    )
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all))
+  },
+
   delete(id: string): void {
     const filtered = this.loadAll().filter(s => s.id !== id)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered))
