@@ -4,7 +4,7 @@ import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
 import { SongRepository } from './repository/SongRepository'
 
-type Status      = 'idle' | 'playing' | 'done'
+type Status      = 'idle' | 'loading' | 'error' | 'playing' | 'done'
 type Screen      = 'home' | 'stepup' | 'mysongs'
 type PlayContext = 'compose' | 'library'
 
@@ -141,7 +141,19 @@ export default function App(): JSX.Element {
     const offPlay = playbackEngine.on('play', () => setStatus('playing'))
     const offEnd  = playbackEngine.on('end',  () => setStatus('done'))
     const offStop = playbackEngine.on('stop', () => setStatus('idle'))
-    return () => { offPlay(); offEnd(); offStop() }
+
+    // Tone.js が onerror の外側でグローバルに reject を発火するケースをキャッチ
+    const handleRejection = (e: PromiseRejectionEvent): void => {
+      e.preventDefault()
+      playbackEngine.resetLoad()
+      setStatus('error')
+    }
+    window.addEventListener('unhandledrejection', handleRejection)
+
+    return () => {
+      offPlay(); offEnd(); offStop()
+      window.removeEventListener('unhandledrejection', handleRejection)
+    }
   }, [])
 
   // ── ホーム: 曲を作る ──────────────────────────────────────────────
@@ -150,7 +162,13 @@ export default function App(): JSX.Element {
     const blueprint = composerEngine.compose({ mood })
     setLastBlueprint(blueprint)
     setIsSaved(false)
-    await playbackEngine.play(blueprint)
+    setStatus('loading')
+    try {
+      await playbackEngine.play(blueprint)
+    } catch {
+      playbackEngine.resetLoad()
+      setStatus('error')
+    }
   }
 
   const handleStop = (): void => { playbackEngine.stop() }
@@ -183,7 +201,13 @@ export default function App(): JSX.Element {
   const handlePlaySaved = async (song: SavedSong): Promise<void> => {
     setEditingId(null)
     setPlayContext('library')
-    await playbackEngine.play(song.blueprint)
+    setStatus('loading')
+    try {
+      await playbackEngine.play(song.blueprint)
+    } catch {
+      playbackEngine.resetLoad()
+      setStatus('error')
+    }
   }
 
   const handleEditStart = (song: SavedSong): void => {
@@ -203,6 +227,48 @@ export default function App(): JSX.Element {
     if (editingId === id) setEditingId(null)
     SongRepository.delete(id)
     setSongs(prev => prev.filter(s => s.id !== id))
+  }
+
+  // ── 読み込み中 ──────────────────────────────────────────────────
+  if (status === 'loading') {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={s.root}>
+          <p className="breathing" style={{ ...s.playingText, fontSize: '1.5rem' }}>
+            🎵 準備中...
+          </p>
+          <p style={{ color: '#4b5563', fontSize: '0.82rem', marginTop: '8px' }}>
+            音源を読み込んでいます（初回のみ）
+          </p>
+        </div>
+      </>
+    )
+  }
+
+  // ── エラー ──────────────────────────────────────────────────────
+  if (status === 'error') {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={s.root}>
+          <p style={{ fontSize: '2.5rem', lineHeight: 1 }}>⚠️</p>
+          <p style={{ color: '#fca5a5', fontSize: '1.1rem', fontWeight: 700, marginTop: '12px' }}>
+            音源の読み込みに失敗しました
+          </p>
+          <p style={{ color: '#6b7280', fontSize: '0.88rem', marginTop: '6px', textAlign: 'center' as const, lineHeight: 1.6 }}>
+            インターネット接続を確認してから<br />もう一度お試しください
+          </p>
+          <button
+            className="retry-btn"
+            onClick={() => setStatus('idle')}
+            style={{ ...s.retryBtn, marginTop: '32px' }}
+          >
+            もどる
+          </button>
+        </div>
+      </>
+    )
   }
 
   // ── 再生中 ──────────────────────────────────────────────────────

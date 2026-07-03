@@ -1,5 +1,5 @@
 import * as Tone from 'tone'
-import type { PlaybackEventMap, SongBlueprint, TrackData } from '../theory/types'
+import type { PlaybackEventMap, SongBlueprint } from '../theory/types'
 import { ChordPlayer } from './players/ChordPlayer'
 import { BassPlayer }  from './players/BassPlayer'
 import { DrumPlayer }  from './players/DrumPlayer'
@@ -19,6 +19,9 @@ export class PlaybackEngine {
   private endTimer:  ReturnType<typeof setTimeout> | null = null
   private fadeTimer: ReturnType<typeof setTimeout> | null = null
   private stopTimer: ReturnType<typeof setTimeout> | null = null
+
+  // サンプラー読み込みは一度だけ。同時に複数回 play() が呼ばれても安全
+  private loadPromise: Promise<void> | null = null
 
   // マスターチェーン: masterVolume → compressor → limiter → Destination
   private masterVolume = new Tone.Volume(0)
@@ -58,13 +61,37 @@ export class PlaybackEngine {
     if (this.stopTimer !== null) { clearTimeout(this.stopTimer); this.stopTimer = null }
   }
 
+  // Transport イベントのキャンセルのみ。サンプラーは破棄しない
   private cleanup(): void {
     this.clearTimers()
     this.masterVolume.volume.cancelScheduledValues(Tone.now())
     this.masterVolume.volume.value = 0
-    this.chordPlayer.dispose()
-    this.bassPlayer.dispose()
-    this.drumPlayer.dispose()
+  }
+
+  // サンプラーを初期化。2回目以降は即座に返る
+  async load(): Promise<void> {
+    if (!this.loadPromise) {
+      this.loadPromise = (async () => {
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('音源の読み込みがタイムアウトしました')), 15000)
+        )
+        await Promise.race([
+          Promise.all([
+            this.chordPlayer.load(this.masterVolume),
+            this.bassPlayer.load(this.masterVolume),
+          ]),
+          timeout,
+        ])
+        this.drumPlayer.load(this.masterVolume)
+        this.emit('load', {})
+      })()
+    }
+    return this.loadPromise
+  }
+
+  // ロード失敗後のリセット（リトライ用）
+  resetLoad(): void {
+    this.loadPromise = null
   }
 
   async play(blueprint: SongBlueprint): Promise<void> {
@@ -73,16 +100,19 @@ export class PlaybackEngine {
     this.cleanup()
 
     await Tone.start()
+    await this.load()
 
     Tone.getTransport().bpm.value = blueprint.bpm
 
+    const bars = blueprint.chordProgression.bars
+
     for (const track of blueprint.tracks) {
       if (track.kind === 'chord') {
-        this.chordPlayer.schedule(track, this.masterVolume)
+        this.chordPlayer.schedule(track)
       } else if (track.kind === 'bass') {
-        this.bassPlayer.schedule(track, this.masterVolume)
+        this.bassPlayer.schedule(track)
       } else if (track.kind === 'drum') {
-        this.drumPlayer.schedule(track, this.masterVolume)
+        this.drumPlayer.schedule(track, bars)
       }
     }
 
@@ -94,16 +124,13 @@ export class PlaybackEngine {
 
     this.emit('play', { bpm: blueprint.bpm })
 
-    const { bars } = blueprint.chordProgression
     const songSeconds = bars * 4 * (60 / blueprint.bpm)
 
-    // フェードアウト：最後のバーが終わる手前から開始
     const fadeOutStartMs = Math.max(0, songSeconds - FADE_OUT_SEC + 0.3) * 1000
     this.fadeTimer = setTimeout(() => {
       this.masterVolume.volume.rampTo(-60, FADE_OUT_SEC)
     }, fadeOutStartMs)
 
-    // フェードアウト完了後にクリーンアップ
     this.endTimer = setTimeout(() => {
       this.cleanup()
       this.emit('end', {})
@@ -112,26 +139,15 @@ export class PlaybackEngine {
 
   stop(): void {
     this.clearTimers()
+    Tone.getTransport().stop()
+    Tone.getTransport().cancel()
     this.masterVolume.volume.cancelScheduledValues(Tone.now())
-    this.masterVolume.volume.rampTo(-60, 0.15)
+    this.masterVolume.volume.rampTo(-60, 0.08)
+    // volume はここでリセットしない。play() の cleanup() が次回 play 時にリセットする
     this.stopTimer = setTimeout(() => {
-      Tone.getTransport().stop()
-      Tone.getTransport().cancel()
-      this.chordPlayer.dispose()
-      this.bassPlayer.dispose()
-      this.drumPlayer.dispose()
-      this.masterVolume.volume.value = 0
       this.stopTimer = null
       this.emit('stop', {})
-    }, 160)
-  }
-
-  setBpm(bpm: number): void {
-    Tone.getTransport().bpm.value = bpm
-  }
-
-  async load(_tracks: TrackData[], _bpm: number): Promise<void> {
-    this.emit('load', {})
+    }, 120)
   }
 }
 
