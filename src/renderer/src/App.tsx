@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { MoodId, RealMoodId, SongBlueprint, SavedSong } from './theory/types'
+import type { MoodId, RealMoodId, SongBlueprint, SavedSong, ProgressionOption } from './theory/types'
 import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
 import { SongRepository } from './repository/SongRepository'
 
 type Status      = 'idle' | 'loading' | 'error' | 'playing' | 'done'
-type Screen      = 'home' | 'stepup' | 'mysongs'
+type Screen      = 'home' | 'chord' | 'stepup' | 'mysongs'
 type PlayContext = 'compose' | 'library'
 
 const MOODS: { emoji: string; label: string; id: MoodId }[] = [
@@ -105,6 +105,32 @@ const CSS = `
   .save-edit-btn:hover   { background: rgba(52, 211, 153, 0.22)   !important; color: #6ee7b7 !important; border-color: rgba(52, 211, 153, 0.55) !important; }
   .delete-song-btn:hover { background: rgba(220, 38, 38, 0.22)    !important; color: #fca5a5 !important; border-color: rgba(220, 38, 38, 0.55) !important; }
 
+  .chord-card-btn {
+    animation: fadeInUp 0.35s ease both;
+    background: rgba(196, 181, 253, 0.04);
+    border: 1.5px solid rgba(196, 181, 253, 0.18);
+    border-radius: 20px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.2s, border-color 0.2s, transform 0.18s, box-shadow 0.18s;
+    font-family: 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+  }
+  .chord-card-btn:hover {
+    background: rgba(196, 181, 253, 0.12);
+    border-color: rgba(196, 181, 253, 0.5);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .chord-card-btn:active { transform: translateY(0); transition-duration: 0.07s; }
+  .chord-card-btn:nth-child(1) { animation-delay: 0.05s; }
+  .chord-card-btn:nth-child(2) { animation-delay: 0.12s; }
+  .chord-card-btn:nth-child(3) { animation-delay: 0.19s; }
+
   .stepup-card {
     animation: fadeInUp 0.4s ease both;
     background: rgba(255, 255, 255, 0.03);
@@ -128,14 +154,16 @@ const CSS = `
 `
 
 export default function App(): JSX.Element {
-  const [status,       setStatus]       = useState<Status>('idle')
-  const [screen,       setScreen]       = useState<Screen>('home')
-  const [playContext,  setPlayContext]  = useState<PlayContext>('compose')
-  const [lastBlueprint, setLastBlueprint] = useState<SongBlueprint | null>(null)
-  const [isSaved,      setIsSaved]      = useState(false)
-  const [songs,        setSongs]        = useState<SavedSong[]>([])
-  const [editingId,    setEditingId]    = useState<string | null>(null)
-  const [editingTitle, setEditingTitle] = useState('')
+  const [status,          setStatus]          = useState<Status>('idle')
+  const [screen,          setScreen]          = useState<Screen>('home')
+  const [playContext,     setPlayContext]     = useState<PlayContext>('compose')
+  const [lastBlueprint,   setLastBlueprint]   = useState<SongBlueprint | null>(null)
+  const [isSaved,         setIsSaved]         = useState(false)
+  const [songs,           setSongs]           = useState<SavedSong[]>([])
+  const [editingId,       setEditingId]       = useState<string | null>(null)
+  const [editingTitle,    setEditingTitle]    = useState('')
+  const [selectedMoodId,  setSelectedMoodId]  = useState<RealMoodId | null>(null)
+  const [chordOptions,    setChordOptions]    = useState<ProgressionOption[]>([])
 
   useEffect(() => {
     const offPlay = playbackEngine.on('play', () => setStatus('playing'))
@@ -157,18 +185,33 @@ export default function App(): JSX.Element {
   }, [])
 
   // ── ホーム: 曲を作る ──────────────────────────────────────────────
-  const handleSelect = async (mood: MoodId): Promise<void> => {
+  const handleSelect = (mood: MoodId): void => {
+    if (mood === 'random') {
+      // おまかせ: ムード・コード全部ランダムで即再生
+      startPlay(composerEngine.compose({ mood: 'random' }))
+      return
+    }
+    // 通常ムード: コード選択画面へ
+    setSelectedMoodId(mood)
+    setChordOptions(composerEngine.getProgressionOptions(mood))
+    setScreen('chord')
+  }
+
+  const handleChooseChord = async (progressionId: string): Promise<void> => {
+    if (!selectedMoodId) return
+    const blueprint = composerEngine.compose({ mood: selectedMoodId, chordProgressionId: progressionId })
+    startPlay(blueprint)
+  }
+
+  const startPlay = (blueprint: SongBlueprint): void => {
     setPlayContext('compose')
-    const blueprint = composerEngine.compose({ mood })
     setLastBlueprint(blueprint)
     setIsSaved(false)
     setStatus('loading')
-    try {
-      await playbackEngine.play(blueprint)
-    } catch {
+    playbackEngine.play(blueprint).catch(() => {
       playbackEngine.resetLoad()
       setStatus('error')
-    }
+    })
   }
 
   const handleStop = (): void => { playbackEngine.stop() }
@@ -325,6 +368,51 @@ export default function App(): JSX.Element {
           <button className="retry-btn" onClick={handleRetry} style={s.retryBtn}>
             もう一度つくる
           </button>
+        </div>
+      </>
+    )
+  }
+
+  // ── コード選択画面 ──────────────────────────────────────────────────
+  if (screen === 'chord') {
+    const MOOD_LABELS: Record<RealMoodId, string> = {
+      happy: '😊 元気', night: '🌙 夜', rain: '🌧 雨', spring: '🌸 春',
+    }
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={s.root}>
+          <div style={s.subHeader}>
+            <button className="back-btn" onClick={() => setScreen('home')} style={s.backBtn}>
+              ← もどる
+            </button>
+            <h2 style={{ ...s.subTitle, color: '#c4b5fd' }}>
+              {selectedMoodId ? MOOD_LABELS[selectedMoodId] : ''}
+            </h2>
+            <p style={s.subSubtitle}>コードの雰囲気を選んでください</p>
+          </div>
+
+          <div style={s.cardList}>
+            {chordOptions.map((opt) => (
+              <button
+                key={opt.id}
+                className="chord-card-btn"
+                onClick={() => handleChooseChord(opt.id)}
+              >
+                <span style={s.chordLabel}>{opt.label}</span>
+                <span style={s.chordPills}>
+                  {opt.chords.map((ch, ci) => (
+                    <span key={ci} style={s.chordPillWrap}>
+                      <span style={s.chordPill}>{ch}</span>
+                      {ci < opt.chords.length - 1 && (
+                        <span style={s.chordArrow}>→</span>
+                      )}
+                    </span>
+                  ))}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       </>
     )
@@ -683,6 +771,30 @@ const s = {
     transition: 'background 0.18s, color 0.18s, border-color 0.18s',
     fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
     minWidth: '30px', textAlign: 'center' as const,
+  },
+
+  // ── コード選択カード ──
+  chordLabel: {
+    fontSize: '1.05rem', fontWeight: 700,
+    color: '#e5e7eb', letterSpacing: '0.03em',
+  },
+  chordPills: {
+    display: 'flex', alignItems: 'center', flexWrap: 'wrap' as const, gap: '6px',
+  },
+  chordPillWrap: {
+    display: 'flex', alignItems: 'center', gap: '6px',
+  },
+  chordPill: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    background: 'rgba(196, 181, 253, 0.12)',
+    border: '1px solid rgba(196, 181, 253, 0.3)',
+    borderRadius: '20px',
+    fontSize: '0.92rem', fontWeight: 700,
+    color: '#c4b5fd', letterSpacing: '0.04em',
+  },
+  chordArrow: {
+    fontSize: '0.75rem', color: '#4b5563',
   },
 
   emptyState: { textAlign: 'center' as const, marginTop: '40px', display: 'flex', flexDirection: 'column' as const, gap: '10px' },

@@ -106,6 +106,13 @@ export type WeightConfig = {
   scene: number  // default: 1
 }
 
+// コード選択画面に渡す進行オプション
+export type ProgressionOption = {
+  id:     string
+  label:  string
+  chords: string[]
+}
+
 // PlaybackEngine のイベント定義
 export type PlaybackEventMap = {
   play:  { bpm: number }

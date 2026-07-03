@@ -4,21 +4,28 @@
 
 ユーザーが触るのは「選択」だけ。内部処理はすべて自動。
 
+直感モードの主軸は **コード → ドラム → 音質 → メロディ** の4層の逐次選択。
+ムード／ジャンルは生成のトリガーではなく、各層の候補を絞り込む **任意のフィルタ**。
+
 ```
 [ユーザー]
-    │ ジャンル・雰囲気・コード・メロディ を「選ぶ」だけ
+    │ ムード／ジャンルを「選ぶ」（任意・フィルタとして機能）
     ▼
-[UIレイヤー]  React + Electron
-    │ 選択IDを渡す
+[コード層]  4コードセット／進行候補から選ぶ
     ▼
-[音楽理論レイヤー]
-    │ スケール計算・コード展開・BPM決定
+[ドラム層]  パターンを選ぶ
+    ▼
+[音質層]    Smart FXの感覚ラベルで選ぶ
+    ▼
+[メロディ層] 候補から選ぶ
     ▼
 [音声エンジンレイヤー]  Tone.js
     │ 自動ミックス（EQ/リバーブ/コンプ/パン）適用
     ▼
 [音出力]  スピーカー
 ```
+
+> **現状（v0.1.0）**: 実装済みなのは「ムード選択（フィルタ）→ コード選択」まで。ドラム・音質・メロディは `Selector` が重み付きランダムで自動的に決めており、まだユーザーに選択肢として見せていない（Roadmap: v0.2.0で選択UI化）。
 
 ---
 
@@ -29,11 +36,10 @@
 | **Electron** | デスクトップアプリ化 | Windows/Mac両対応、ファイル保存が容易 |
 | **React + TypeScript** | UI構築 | 型安全、画面ウィザード実装に適切 |
 | **Tone.js** | 音声合成・再生 | 音楽的タイミング管理、内蔵シンセ・エフェクト |
-| **Zustand** | 状態管理 | シンプルAPI、ボイラープレートが少ない |
+| **Zustand** | 状態管理 | 依存として導入済みだが現状未使用（`useState`＋イベントバスで足りている）。DAWモード（Phase3）でピアノロール・ミキサーの状態管理が複雑化した時点で採用する |
 | **Vite** | ビルドツール | 高速HMR、Electron-viteプラグインで連携 |
-| **Tailwind CSS** | スタイリング | 素早いUI構築、カスタムデザイン対応 |
 
-> AIライブラリは使用しない。すべての候補提示は `data/` 以下のJSONデータベースから行う。
+> AIライブラリは使用しない。すべての候補提示は `data/music/` 以下のTypeScriptデータベースから行う。
 
 ---
 
@@ -47,104 +53,102 @@
 ### なぜMIDIではなくTone.jsか
 - MIDI設定はユーザーへの負荷が高い（ドライバ、デバイス選択）
 - Tone.jsはブラウザ音源のみで完結、インストール不要
-- Phase1では音が鳴ること > 音質
+- Phase1〜2では内蔵シンセのみを使用し、音質より「音が鳴ること」を優先する（実音サンプルは未使用）
 
-### なぜZustandか（ReduxやContextではなく）
-- 画面ウィザードの「現在の選択状態」管理のみでよい
-- グローバル状態が少なく、Reduxは過剰
+### なぜ4層の逐次選択で、ジャンル×ムード×シーンの3軸生成ではないか
+- 初期草案（`brain.txt`、旧architecture.md）では「ジャンル・ムード・シーン」の3軸を入力にGenre/Mood/SceneResolverがコード進行を一括スコアリングして決定する設計だった
+- しかし、ユーザーが最初に3つの抽象的な軸を選ばされるのは「選ぶだけで曲が完成する」という直感モードの体験として遠回りになる
+- コード → ドラム → 音質 → メロディという「曲を組み立てていく手触り」を4つのカード選択に分解し、ムード／ジャンルはその手前で候補を絞り込む**任意のフィルタ**に格下げする
+- 3軸Resolver構想は古い草案として扱い、以後のResolver設計は「4層それぞれの候補フィルタ」として再定義する
+
+### なぜTypeScript Recordであり、JSON DBではないか
+- 初期草案では `data/*.json` を音楽理論DBとする想定だったが、実装では `data/music/*/index.ts` の `Record` オブジェクトを採用した
+- 型安全（`MoodRecord` 等の型でコンパイル時に検証できる）とimportの軽さを優先し、これを正式なデータ形式とする
+- JSONファイルへの移行は行わない
 
 ---
 
-## フォルダ構成案
+## フォルダ構成（現状）
 
 ```
 MyDAW/
 ├── docs/                        # 設計書（このファイル群）
 ├── src/
 │   ├── main/                    # Electronメインプロセス
-│   │   └── index.ts             # ウィンドウ生成・IPC設定
+│   ├── preload/
 │   │
-│   ├── renderer/                # Reactアプリ（UIレイヤー）
-│   │   ├── screens/             # 画面単位のコンポーネント
-│   │   │   ├── WelcomeScreen.tsx   # おまかせ / 自分で選ぶ の分岐
-│   │   │   ├── GenreScreen.tsx
-│   │   │   ├── MoodScreen.tsx
-│   │   │   ├── SceneScreen.tsx     # シーン・感情選択（コード進行は非表示）
-│   │   │   ├── MelodyScreen.tsx
-│   │   │   ├── PlayScreen.tsx
-│   │   │   └── CompleteScreen.tsx
-│   │   ├── components/          # 再利用UIパーツ
-│   │   │   ├── SelectCard.tsx   # 選択カード（共通）
-│   │   │   ├── PreviewButton.tsx # 試し聴きボタン
-│   │   │   └── ProgressBar.tsx  # ステップ進捗
-│   │   └── store/
-│   │       └── songStore.ts     # Zustandストア（選択状態管理）
-│   │
-│   ├── audio/                   # 音声エンジンレイヤー
-│   │   ├── engine.ts            # Tone.jsラッパー（再生・停止・BPM設定）
-│   │   ├── instruments.ts       # 楽器プリセット定義
-│   │   ├── arranger.ts          # コード進行→パート別音符列に変換
-│   │   └── mixer.ts             # 自動ミックス（ユーザー非公開）
-│   │
-│   └── theory/                  # 音楽理論レイヤー
-│       ├── composerEngine.ts        # オーケストレーター（SongBlueprint を生成）
-│       ├── resolvers/               # 責務分割された個別リゾルバー
-│       │   ├── genreResolver.ts     # ジャンル → BPMセンター・キー候補
-│       │   ├── moodResolver.ts      # 雰囲気 → スケール・明暗・エネルギー
-│       │   ├── sceneResolver.ts     # シーン → テンポ補正・密度
-│       │   ├── chordResolver.ts     # コンテキスト → コード進行スコアリング
-│       │   ├── melodyResolver.ts    # コンテキスト → メロディパターン選択
-│       │   └── bpmResolver.ts       # コンテキスト → BPM確定
-│       ├── transpose.ts             # 相対音程→実音変換
-│       ├── chordVoicing.ts          # コードの音符展開
-│       └── db.ts                    # data/ JSONの読み込み・検索
+│   └── renderer/
+│       ├── public/samples/      # 将来の音声サンプル置き場（Phase3以降）
+│       └── src/
+│           ├── App.tsx          # 全画面ロジック（home/chord/stepup/mysongs）
+│           ├── main.tsx
+│           │
+│           ├── theory/
+│           │   └── types.ts     # UserIntent / SongBlueprint など全体で共有する型定義
+│           │
+│           ├── composer/                # 「選択」と「生成」のオーケストレーション
+│           │   ├── ComposerEngine.ts    # ムード解決・seed付与・公開API
+│           │   ├── Selector.ts          # 重み付きランダム抽選（直前と同じIDを避ける）
+│           │   └── Generator.ts         # SelectionSet → SongBlueprint の純粋関数
+│           │
+│           ├── data/music/              # 音楽理論データベース（TypeScript Record）
+│           │   ├── types.ts             # MoodRecord / ProgressionRecord などのレコード型
+│           │   ├── moods/               # ComposerEngineの起点テーブル（ムードごとの候補と重み）
+│           │   ├── progressions/        # コード進行の実データ
+│           │   ├── bass-patterns/
+│           │   ├── drum-patterns/
+│           │   └── instrument-presets/
+│           │
+│           ├── audio/                   # 音声エンジンレイヤー（Tone.jsに依存する唯一の場所）
+│           │   ├── engine.ts            # PlaybackEngine（マスターチェーン・再生制御）
+│           │   └── players/
+│           │       ├── ChordPlayer.ts
+│           │       ├── BassPlayer.ts
+│           │       └── DrumPlayer.ts
+│           │
+│           └── repository/
+│               └── SongRepository.ts    # LocalStorageへの曲データ永続化
 │
-├── data/                        # 音楽理論DB（JSONファイル）
-│   ├── chord-progressions.json  # コード進行パターン
-│   ├── melody-patterns.json     # メロディパターン
-│   ├── genres.json              # ジャンル定義（BPM・キー候補）
-│   └── instruments.json         # 楽器プリセット
-│
-└── public/
-    └── samples/                 # 将来の音声サンプル置き場（Phase3以降）
+└── data/                         # 未使用（実データは src/renderer/src/data/music/ 配下）
 ```
 
 ---
 
-## レイヤー間のデータフロー
+## レイヤー間のデータフロー（現状のコード選択まで）
 
 ```
-ユーザーが「ジャンル=Pop, 雰囲気=Happy, シーン=朝」を選択
+ユーザーが「ムード=happy」を選択（任意・フィルタ）
     ↓
-theory/composerEngine.ts が genre+mood+scene から
-chord-progressions.json の属性スコアをスコアリングし
-最適なコード進行・BPM・キーを自動決定（ユーザーには見えない）
+App.tsx が composerEngine.getProgressionOptions('happy') を呼び
+moods['happy'].progressionCandidates をコード選択カードとして提示
     ↓
-ユーザーがメロディを選択
+ユーザーがコード進行カードを選択
     ↓
-audio/arranger.ts が 4トラック分の音符列を生成
-  - melody: MelodyPatternをKeyに移調
-  - chord: コードを3音ボイシングに展開
-  - bass:  コードのルート音を8分音符で生成
-  - drum:  ジャンル別パターンを適用
+composerEngine.compose({ mood, chordProgressionId }) が呼ばれる
+    ├─ Selector.select() がドラム・ベース・楽器プリセットを重み付き抽選（未UI化）
+    └─ Generator.generate() が SelectionSet + MoodRecord から SongBlueprint を構築
     ↓
-audio/mixer.ts が各トラックにEQ・リバーブ・コンプを自動適用
-    ↓
-audio/engine.ts が Tone.js で再生
+PlaybackEngine.play(blueprint) が Tone.js で再生
+  - ChordPlayer / BassPlayer / DrumPlayer が各トラックをスケジュール
+  - masterVolume → Compressor → Limiter → Destination でフェードイン/アウト
 ```
+
+ドラム・音質・メロディの層が選択UIとして追加されると、上記フローの「Selector.select()」の該当部分がユーザー操作に置き換わる。
 
 ---
 
 ## ComposerEngine 詳細設計
 
-**ファイル**: `src/renderer/theory/composerEngine.ts`  
-**サブモジュール**: `src/renderer/theory/resolvers/`
+**ファイル**: `src/renderer/src/composer/ComposerEngine.ts`
+**関連**: `Selector.ts`（選択）, `Generator.ts`（生成）, `data/music/types.ts`（レコード型）
 
 ### 責務
 
-ユーザーが選んだ「ジャンル・雰囲気・シーン」を受け取り、
-コード進行・メロディパターン・BPM・キー・楽器割り当てを含む
-**曲全体の設計図（SongBlueprint）** を生成して返す。
+`ComposerEngine` は「選択」を `Selector` に、「生成」を `Generator` に委譲するオーケストレーター。
+
+- ムードの解決（`random` → 実ムードへの変換）
+- `seed` の付与（保存曲のタイトル生成に使用）
+- ユーザーが選んだコード進行での上書き
 
 「推薦」ではなく「作曲」の代行。ユーザーは音楽理論を一切知らなくてよい。
 
@@ -153,164 +157,91 @@ audio/engine.ts が Tone.js で再生
 ### 入出力
 
 ```typescript
-// 入力
-type UserSelection = {
-  genre: string;   // "pop" | "rock" | "jazz" | "edm" | ...
-  mood:  string;   // "happy" | "sad" | "cool" | "dreamy" | ...
-  scene: string;   // "morning" | "night" | "drive" | "relax" | ...
-};
+// 入力（theory/types.ts）
+type UserIntent = {
+  mood: MoodId                      // 'happy' | 'night' | 'rain' | 'spring' | 'random'
+  chordProgressionId?: string       // コード層でユーザーが選んだ場合に指定
+  tempo?: number                    // Phase4以降に解放
+  instrumentPresetId?: string       // Phase4以降に解放
+}
 
 // 出力
 type SongBlueprint = {
-  chordProgression: ChordProgression;
-  melodyPattern:    MelodyPattern;
-  bpm:              number;
-  key:              string;            // "C" | "G" | "Am" | ...
-  scale:            string;            // "major" | "minor" | "dorian" | ...
-  instrumentMap:    InstrumentMap;     // トラック別プリセットID
-};
-
-type ChordProgression = {
-  id:     string;     // "pop_basic_01"
-  chords: string[];   // ["C", "Am", "F", "G"]
-  bars:   number;     // 4 | 8 | 16
-};
-
-type MelodyPattern = {
-  id:      string;
-  notes:   RelativeNote[];   // 相対音程（transpose.ts で実音に変換）
-};
-
-type InstrumentMap = {
-  melody: string;   // preset id
-  chord:  string;
-  bass:   string;
-  drum:   string;
-};
-```
-
----
-
-### サブリゾルバー設計
-
-ComposerEngine は6つのリゾルバーを順に呼び出してSongBlueprintを組み立てる。
-各リゾルバーは単一の判断のみを行い、依存は `context` オブジェクト経由で受け取る。
-
-```
-UserSelection
-    │
-    ├─→ GenreResolver  → GenreContext  (BPMセンター・キー候補・スケール傾向)
-    ├─→ MoodResolver   → MoodContext   (明暗・エネルギー・スケール優先度)
-    ├─→ SceneResolver  → SceneContext  (テンポ補正値・密度)
-    │
-    │   ↓ 3つのContextを統合
-    ├─→ ChordResolver  → ChordProgression  (スコアリングで選択)
-    ├─→ BPMResolver    → number            (Contextとコード進行から確定)
-    └─→ MelodyResolver → MelodyPattern     (キー・スケール・ジャンルで選択)
-```
-
-#### GenreResolver
-
-```typescript
-type GenreContext = {
-  bpmCenter:  number;            // ジャンルの標準BPM
-  keyPool:    Record<"major" | "minor", string[]>;  // 使いやすいキー一覧
-  scaleBias:  "major" | "minor" | "neutral";        // ジャンルのスケール傾向
-};
-
-// genres.json を参照して返す。ロジックなし、純粋なデータ取得。
-function resolveGenre(genre: string): GenreContext;
-```
-
-#### MoodResolver
-
-```typescript
-type MoodContext = {
-  scalePref:  "major" | "minor";   // happy→major, sad→minor
-  energy:     number;              // 0〜1（テンポ上振れの度合い）
-  brightness: number;              // 0〜1（将来のInstrumentPreset.character選択に使用）
-};
-
-function resolveMood(mood: string): MoodContext;
-```
-
-#### SceneResolver
-
-```typescript
-type SceneContext = {
-  tempoModifier: number;   // -10〜+10 BPMへの加算値。朝=+5, 夜=-5 など
-  density:       "sparse" | "normal" | "dense";  // 将来のアレンジ密度制御用
-};
-
-function resolveScene(scene: string): SceneContext;
-```
-
-#### ChordResolver
-
-```typescript
-// WeightConfig（後述）を受け取り、スコアリングを行う
-function resolveChord(
-  selection: UserSelection,
-  weight:    WeightConfig
-): ChordProgression;
-```
-
-#### BPMResolver
-
-```typescript
-function resolveBpm(
-  genreCtx: GenreContext,
-  sceneCtx: SceneContext,
-  moodCtx:  MoodContext,
-  chord:    ChordProgression
-): number;
-// 計算: bpmCenter + tempoModifier + (energy * 10) を chord.bpmRange でクランプ
-```
-
-#### MelodyResolver
-
-```typescript
-function resolveMelody(
-  genre: string,
-  key:   string,
-  scale: string
-): MelodyPattern;
-```
-
----
-
-### WeightConfig — スコアリング重み設定
-
-ChordResolver のスコアリングで使う重みを外部から差し替えられる設計。
-**初心者は一切触らない**。デフォルト値がそのまま使われる。
-
-```typescript
-type WeightConfig = {
-  genre: number;   // default: 3（最重要）
-  mood:  number;   // default: 2
-  scene: number;   // default: 1
-};
-
-const DEFAULT_WEIGHT: WeightConfig = { genre: 3, mood: 2, scene: 1 };
-
-// スコア計算（ChordResolver 内部）
-function calcScore(
-  entry:     ChordProgressionEntry,
-  selection: UserSelection,
-  weight:    WeightConfig
-): number {
-  let s = 0;
-  if (entry.tags.genre.includes(selection.genre)) s += weight.genre;
-  if (entry.tags.mood.includes(selection.mood))   s += weight.mood;
-  if (entry.tags.scene.includes(selection.scene)) s += weight.scene;
-  return s;
+  seed:             number
+  moodId:           RealMoodId
+  chordProgression: ChordProgression
+  melodyPattern:    MelodyPattern   // 現状 notes: [] （メロディ層は未実装）
+  bpm:              number
+  key:              string
+  scale:            'major' | 'minor'
+  instrumentMap:    InstrumentMap
+  tracks:           TrackLayer[]
 }
 ```
 
-WeightConfig の用途：
-- **Phase1〜2**: 変更しない。デフォルト固定。
-- **Phase3以降**: A/Bテスト・ジャンルごとの精度チューニングに使用。
-- UIには **公開しない**。
+---
+
+### Selector — 「選択」の責務
+
+重み付きランダム抽選を行う。直前と同じIDが選ばれるとバリエーションが乏しくなるため、可能な限り直前と異なる候補を選ぶ。
+
+```typescript
+class Selector {
+  select(mood: MoodRecord): SelectionSet {
+    // progressionId / bassPatternId / drumPatternId / instrumentPresetId を
+    // mood.progressionCandidates 等から重み付き抽選
+  }
+}
+```
+
+将来的にこのクラスを `AISelector` 等に差し替えることを想定した設計（AIによる楽曲生成は禁止事項だが、選択ロジックの差し替え可能性は残す）。
+
+ドラム層・音質層・メロディ層がUI化される際は、`Selector.select()` の該当プロパティをユーザー操作の結果で上書きする形で拡張する（`ComposerEngine.compose()` が `chordProgressionId` を上書きしているのと同じパターン）。
+
+---
+
+### Generator — 「生成」の責務
+
+副作用のない純粋関数。同じ入力なら常に同じ出力を返す（テスト容易）。
+
+```typescript
+function generate(
+  mood: MoodRecord,
+  selection: SelectionSet
+): Omit<SongBlueprint, 'seed' | 'moodId'>
+```
+
+`progressions` / `bassPatterns` / `drumPatterns` / `instrumentPresets` の各データベースから該当IDのレコードを引き、`SongBlueprint` の `tracks` を組み立てる。
+
+---
+
+### MoodRecord — ムード（フィルタ）のデータ構造
+
+**ファイル**: `data/music/types.ts`, `data/music/moods/index.ts`
+
+```typescript
+type WeightedRef = {
+  id:     string
+  weight: number   // 相対的な選ばれやすさ。合計が100である必要はない
+}
+
+type ProgressionCandidateRef = WeightedRef & {
+  label: string    // コード選択カードに表示する日本語ラベル（例: "王道の明るさ"）
+}
+
+type MoodRecord = {
+  id:                    string
+  bpm:                   number
+  key:                   string
+  scale:                 'major' | 'minor'
+  progressionCandidates: ProgressionCandidateRef[]
+  bassPatternCandidates: WeightedRef[]
+  drumPatternCandidates: WeightedRef[]
+  instrumentPresetId:    string
+}
+```
+
+ムードは `ComposerEngine` の起点テーブルであり、コード・ベース・ドラムそれぞれの候補プールを絞り込む。現状4ムード（happy / night / rain / spring）を実データとして持つ。
 
 ---
 
@@ -318,20 +249,11 @@ WeightConfig の用途：
 
 ```typescript
 class ComposerEngine {
-  // 通常の作曲（デフォルト重みを使用）
-  compose(selection: UserSelection): SongBlueprint;
+  // ムードに紐づくコード進行の選択肢を返す（コード選択カード用）
+  getProgressionOptions(moodId: RealMoodId): ProgressionOption[]
 
-  // 同じ条件で別の候補を返す（「別のパターン」ボタン用）
-  composeAlternative(
-    selection: UserSelection,
-    excludeChordId: string
-  ): SongBlueprint;
-
-  // 重みを上書きして作曲（将来の内部チューニング用。UIには非公開）
-  composeWithWeight(
-    selection: UserSelection,
-    weight:    WeightConfig
-  ): SongBlueprint;
+  // 曲を生成する。chordProgressionId未指定ならSelectorが自動選択
+  compose(intent: UserIntent): SongBlueprint
 }
 ```
 
@@ -339,84 +261,55 @@ class ComposerEngine {
 
 ### スコアリング補足
 
-- 同スコアが複数ある場合は **ランダムに1つ選ぶ**（毎回同じ結果にならないよう）
-- スコアが0のエントリーは候補から除外
-- フォールバック（全エントリーが0点）は `genre` 一致のみのエントリーを使用
-- フォールバックも空なら `chord-progressions.json` の先頭エントリーを使用
+- `Selector.pick()` は重み付き抽選 + 直前IDの除外
+- 将来ドラム・音質・メロディ層をUI化する際、各層の候補一覧を返すAPI（`getDrumPatternOptions()` 等）を `ComposerEngine` に追加する想定
 
 ---
 
 ## PlaybackEngine 詳細設計
 
-**ファイル**: `src/renderer/audio/engine.ts`
+**ファイル**: `src/renderer/src/audio/engine.ts`
 
 ### 責務
 
-Tone.js を薄くラップし、再生・停止・BPM変更などの操作を提供する。
-このモジュールだけが Tone.js に依存する唯一の場所。
+Tone.js を薄くラップし、`SongBlueprint` を受け取って再生・停止を行う。
+このモジュール（と `audio/players/` 配下）だけが Tone.js に依存する。
 
 **UIは状態をポーリングしない。イベントを購読するだけ。**
 
 ---
 
-### 状態モデル
+### マスターチェーン
 
 ```
-idle ──→ loading ──→ ready ──→ playing ──→ stopped
-                       ↑__________________________|
+masterVolume（フェードイン/アウト制御）→ Compressor → Limiter → Destination
 ```
 
-- `idle`: 初期状態。AudioContext 未起動。
-- `loading`: `load()` 実行中。再生ボタンは無効。
-- `ready`: ロード完了。再生可能。
-- `playing`: Transport 動作中。音が出ている。
-- `stopped`: Transport 停止。頭に戻った状態。
+- `play()` 呼び出し時にフェードイン（0.8秒）、曲の終わりにフェードアウト（1.5秒）
+- `Compressor(threshold: -18, ratio: 3)` + `Limiter(-1)` で音割れを防止
 
 ---
 
 ### イベント設計
 
-UIはエンジンの状態を `getState()` で取得しない。
-**イベントのみを購読し、自身のUIステートを更新する。**
-
 ```typescript
 type PlaybackEventMap = {
-  play:    { bpm: number };
-  stop:    {};
-  end:     {};                              // ループ1周完了、または曲終了
-  tick:    { bar: number; beat: number };   // 再生位置の定期通知
-  load:    {};                              // ロード完了
-};
-```
+  play: { bpm: number }
+  stop: Record<string, never>
+  end:  Record<string, never>   // フェードアウト完了・曲終了
+  tick: { bar: number; beat: number }
+  load: Record<string, never>
+}
 
-```typescript
-// イベント購読API
 class PlaybackEngine {
   on<K extends keyof PlaybackEventMap>(
     event:   K,
     handler: (payload: PlaybackEventMap[K]) => void
-  ): () => void;   // 戻り値は unsubscribe 関数
+  ): () => void   // 戻り値は unsubscribe 関数
 }
 ```
 
-#### UIでの使用例
-
-```typescript
-// PlayScreen.tsx
-useEffect(() => {
-  const off = [
-    engine.on("play",  ()         => setIsPlaying(true)),
-    engine.on("stop",  ()         => setIsPlaying(false)),
-    engine.on("end",   ()         => setIsPlaying(false)),
-    engine.on("tick",  ({ bar })  => setCurrentBar(bar)),
-    engine.on("load",  ()         => setCanPlay(true)),
-  ];
-  return () => off.forEach(fn => fn());
-}, []);
-```
-
-UIコンポーネントはエンジンの内部状態を一切知らない。
-イベントが来たら自分のstateを更新するだけ。
+UIコンポーネント（`App.tsx`）はエンジンの内部状態を一切知らない。イベントが来たら自分のstateを更新するだけ。
 
 ---
 
@@ -424,23 +317,22 @@ UIコンポーネントはエンジンの内部状態を一切知らない。
 
 ```typescript
 class PlaybackEngine {
-  // 曲データをセットして再生準備（"load" イベントで完了通知）
-  load(tracks: TrackData[], bpm: number): Promise<void>;
+  // 音源を初期化（初回のみ実処理、2回目以降は即座に返る）
+  load(): Promise<void>
 
-  // 再生（初回はAudioContext起動を兼ねる。ユーザー操作から呼ぶこと）
-  play(): void;
+  // SongBlueprintをスケジュールして再生。初回はAudioContext起動を兼ねる
+  play(blueprint: SongBlueprint): Promise<void>
 
-  // 停止（頭に戻る）
-  stop(): void;
+  // 停止（フェードアウト後に"stop"イベント）
+  stop(): void
 
-  // BPMをライブ変更（再生中も即時反映）
-  setBpm(bpm: number): void;
+  // 失敗時のリトライ用にloadPromiseをリセット
+  resetLoad(): void
 
-  // イベント購読（戻り値で購読解除）
   on<K extends keyof PlaybackEventMap>(
     event:   K,
     handler: (payload: PlaybackEventMap[K]) => void
-  ): () => void;
+  ): () => void
 }
 ```
 
@@ -448,238 +340,33 @@ class PlaybackEngine {
 
 ---
 
-### インターフェース型
-
-```typescript
-type TrackData = {
-  id:        "melody" | "chord" | "bass" | "drum";
-  notes:     NoteEvent[];
-  preset:    InstrumentPreset;
-  mixConfig: MixConfig;
-};
-
-type NoteEvent = {
-  time:     string;   // "0:0:0" = 小節:拍:細分
-  note:     string;   // "C4" | "rest"
-  duration: string;   // "4n" | "8n" | "2n"
-  velocity: number;   // 0.0〜1.0
-};
-
-type MixConfig = {
-  volume: number;   // dB (-20〜0)
-  pan:    number;   // -1〜1
-  reverb: number;   // 0〜1
-  eq: { low: number; mid: number; high: number };
-};
-```
-
----
-
-### 内部実装方針
-
-```typescript
-function buildPart(track: TrackData): Tone.Part {
-  const synth = buildSynth(track.preset);
-  applyMix(synth, track.mixConfig);
-  return new Tone.Part((time, event) => {
-    if (event.note !== "rest") {
-      synth.triggerAttackRelease(event.note, event.duration, time, event.velocity);
-    }
-  }, track.notes);
-}
-
-function setupLoop(bars: number): void {
-  Tone.Transport.loopStart = 0;
-  Tone.Transport.loopEnd   = `${bars}m`;
-  Tone.Transport.loop      = true;
-}
-
-// ループ1周完了を "end" イベントとして発火
-Tone.Transport.scheduleRepeat((time) => {
-  if (Tone.Transport.position === "0:0:0") emit("end", {});
-}, "1m");
-```
-
----
-
 ### 注意事項
 
-- `Tone.start()` はユーザー操作イベント内でのみ呼べる（ブラウザ制約）。
-  `play()` は必ずボタンクリックハンドラから呼ぶこと。
-- UIは `load()` の `Promise` 完了ではなく `"load"` イベントで再生ボタンを有効化する。
-- 複数回 `load()` する場合は前の Part を `dispose()` してからセットする。
+- `Tone.start()` はユーザー操作イベント内でのみ呼べる（ブラウザ制約）。`play()` は必ずボタンクリックハンドラから呼ぶこと。
+- `unhandledrejection` をグローバルに拾い、Tone.jsが内部でrejectするケースもエラー状態に落とす（`App.tsx`）。
 
 ---
 
 ## InstrumentPreset 設計
 
-**ファイル**: `src/renderer/audio/instruments.ts`  
-**データ**: `data/instruments.json`
+**ファイル**: `src/renderer/src/data/music/instrument-presets/index.ts`
 
 ### 責務
 
-トラック種別（melody / chord / bass / drum）ごとに
-どんな音を鳴らすかを定義する。
-
-ユーザーは楽器を選ばない。ジャンルに応じて自動で割り当てられる。
-
----
-
-### 型定義
+トラック種別（melody / chord / bass / drum）ごとにどんな音を鳴らすかを定義する。ユーザーは楽器を選ばない。ムードに応じて自動で割り当てられる（現状は全ムード共通の `preset_default` のみ。Known Issues参照）。
 
 ```typescript
-type SynthType = "synth" | "amSynth" | "fmSynth" | "membraneSynth" | "metalSynth";
-
-type EnvelopeConfig = {
-  attack:  number;   // 秒 (0.001〜2.0)
-  decay:   number;   // 秒
-  sustain: number;   // 0〜1
-  release: number;   // 秒
-};
-
-// 音の質感を表す属性。将来の自動選択に使用。ユーザーには非表示。
-type SoundCharacter =
-  | "warm"    // 暖かい・丸い（pad系、ピアノ）
-  | "bright"  // 明るい・抜ける（リード、アコギ）
-  | "hard"    // 硬い・アタックが強い（ロック系、EDMリード）
-  | "soft"    // 柔らかい・控えめ（ストリングス、バックコーラス）
-  | "dark"    // 暗い・重い（マイナー系、deep house）
-  | "airy";   // 空気感・軽い（アコースティック、フルート系）
-
-type InstrumentPreset = {
-  id:          string;              // "pop_lead_synth"
-  label:       string;              // デバッグ用（ユーザーには非表示）
-  synthType:   SynthType;
-  envelope:    EnvelopeConfig;
-  character:   SoundCharacter[];    // 複数指定可。例: ["warm", "soft"]
-  oscillator?: {
-    type: "sine" | "square" | "sawtooth" | "triangle";
-  };
-  modulationIndex?: number;   // fmSynth 専用
-  harmonicity?:     number;   // amSynth / fmSynth 専用
-};
-```
-
----
-
-### character の使われ方
-
-**Phase1〜2**: データとして保持するのみ。音生成には影響しない。
-
-**Phase3以降（予定）**:  
-MoodResolver が `brightness` / `energy` を返し、
-`getPresetForTrack()` がそれを使って character でプリセットを絞り込む。
-
-```
-mood=happy (brightness: 0.8) → character "bright" を優先して選択
-mood=sad   (brightness: 0.2) → character "warm" or "dark" を優先して選択
-```
-
-ユーザーは「暖かい音にして」とは言わない。
-moodを選ぶだけで自動的に character が考慮される。
-
----
-
-### ジャンル別プリセット割り当て表
-
-| ジャンル | melody | chord | bass | drum |
-|---|---|---|---|---|
-| pop | `pop_lead_synth` | `pad_warm` | `bass_pluck` | `drum_standard` |
-| rock | `lead_distortion` | `pad_power` | `bass_driven` | `drum_rock` |
-| jazz | `piano_soft` | `piano_chord` | `bass_acoustic` | `drum_brush` |
-| edm | `lead_edm` | `pad_edm` | `bass_edm` | `drum_edm` |
-
-割り当てロジックは `getPresetForTrack(genre, trackId)` が担う。
-
----
-
-### プリセット例（instruments.json）
-
-```json
-{
-  "presets": [
-    {
-      "id": "pop_lead_synth",
-      "label": "Pop Lead",
-      "synthType": "synth",
-      "character": ["bright", "soft"],
-      "oscillator": { "type": "triangle" },
-      "envelope": {
-        "attack":  0.02,
-        "decay":   0.1,
-        "sustain": 0.5,
-        "release": 0.8
-      }
-    },
-    {
-      "id": "pad_warm",
-      "label": "Warm Pad",
-      "synthType": "amSynth",
-      "character": ["warm", "soft"],
-      "harmonicity": 2.5,
-      "envelope": {
-        "attack":  0.4,
-        "decay":   0.2,
-        "sustain": 0.8,
-        "release": 1.5
-      }
-    },
-    {
-      "id": "lead_distortion",
-      "label": "Distortion Lead",
-      "synthType": "fmSynth",
-      "character": ["hard", "bright"],
-      "modulationIndex": 10,
-      "harmonicity": 3,
-      "envelope": {
-        "attack":  0.01,
-        "decay":   0.2,
-        "sustain": 0.6,
-        "release": 0.5
-      }
-    },
-    {
-      "id": "drum_standard",
-      "label": "Standard Kit",
-      "synthType": "membraneSynth",
-      "character": ["hard"],
-      "envelope": {
-        "attack":  0.001,
-        "decay":   0.4,
-        "sustain": 0.0,
-        "release": 0.1
-      }
-    }
-  ]
+type InstrumentPresetRecord = {
+  id:             string
+  chordPresetId:  string
+  bassPresetId:   string
+  drumPresetId:   string
+  melodyPresetId: string
 }
 ```
-
----
-
-### 公開API
-
-```typescript
-// instruments.json からプリセットを取得
-function getPresetById(id: string): InstrumentPreset;
-
-// ジャンルとトラック種別から適切なプリセットを自動選択
-function getPresetForTrack(
-  genre:   string,
-  trackId: "melody" | "chord" | "bass" | "drum"
-): InstrumentPreset;
-
-// InstrumentPreset → Tone.js のシンセインスタンスに変換
-function buildSynth(
-  preset: InstrumentPreset
-): Tone.Synth | Tone.AMSynth | Tone.FMSynth | Tone.MembraneSynth;
-```
-
----
 
 ### 設計上の制約
 
 - Phase1〜2 では Tone.js 内蔵シンセのみ使用。外部サンプルファイルは使わない。
-- Phase3 以降、`synthType: "sampler"` を追加して実音源に切り替える拡張を想定。
-  型定義を変えずに `buildSynth()` 内の分岐追加だけで対応する。
-- `character` はデータ定義のみ。UIには Phase3 以降まで公開しない。
-- ユーザーがプリセットを選ぶ画面は **Phase3 以降まで実装しない**。
+- Phase3 以降、サンプル音源への切り替えを想定するが、型定義への影響は最小限に抑える。
+- ユーザーがプリセットを直接選ぶ画面は Phase3 以降まで実装しない（音質選択は「Smart FXの感覚ラベル」経由のみ）。

@@ -11,9 +11,9 @@ export const moods: Record<RealMoodId, MoodRecord> = {
     key:   'C',
     scale: 'major',
     progressionCandidates: [
-      { id: 'prog_happy_pop',    weight: 45 }, // 王道進行（最も明るく安定）
-      { id: 'prog_happy_circle', weight: 35 }, // 循環進行（ノリがある）
-      { id: 'prog_happy_simple', weight: 20 }, // スリーコード（シンプル）
+      { id: 'prog_happy_pop',    weight: 45, label: '王道の明るさ'      },
+      { id: 'prog_happy_circle', weight: 35, label: 'ノリのある明るさ'   },
+      { id: 'prog_happy_simple', weight: 20, label: 'すっきりした明るさ' },
     ],
     bassPatternCandidates: [
       { id: 'bass_happy_whole', weight: 50 }, // 安定した全音符
@@ -34,9 +34,9 @@ export const moods: Record<RealMoodId, MoodRecord> = {
     key:   'A',
     scale: 'minor',
     progressionCandidates: [
-      { id: 'prog_night_ballad', weight: 40 }, // バラード（夜の定番）
-      { id: 'prog_night_komuro', weight: 35 }, // 小室進行（切ない疾走感）
-      { id: 'prog_night_dark',   weight: 25 }, // 暗め（深夜感）
+      { id: 'prog_night_ballad', weight: 40, label: 'しっとりした夜' },
+      { id: 'prog_night_komuro', weight: 35, label: '切ない夜'       },
+      { id: 'prog_night_dark',   weight: 25, label: '深夜の静けさ'   },
     ],
     bassPatternCandidates: [
       { id: 'bass_night_whole', weight: 50 }, // 伸ばす・落ち着き
@@ -57,9 +57,9 @@ export const moods: Record<RealMoodId, MoodRecord> = {
     key:   'D',
     scale: 'minor',
     progressionCandidates: [
-      { id: 'prog_rain_melancholy', weight: 40 }, // 憂鬱（雨の定番）
-      { id: 'prog_rain_quiet',      weight: 35 }, // 静かな雨
-      { id: 'prog_rain_slow',       weight: 25 }, // ゆっくりした雨
+      { id: 'prog_rain_melancholy', weight: 40, label: 'しとしと雨'     },
+      { id: 'prog_rain_quiet',      weight: 35, label: '静かな雨'       },
+      { id: 'prog_rain_slow',       weight: 25, label: 'ゆったりした雨' },
     ],
     bassPatternCandidates: [
       { id: 'bass_rain_pedal', weight: 45 }, // D2 持続（雨音のよう）
@@ -80,9 +80,9 @@ export const moods: Record<RealMoodId, MoodRecord> = {
     key:   'G',
     scale: 'major',
     progressionCandidates: [
-      { id: 'prog_spring_bright',  weight: 45 }, // 王道（春の定番）
-      { id: 'prog_spring_rise',    weight: 30 }, // 上昇感（希望・出会い）
-      { id: 'prog_spring_simple',  weight: 25 }, // スリーコード（爽やか）
+      { id: 'prog_spring_bright',  weight: 45, label: '春の王道' },
+      { id: 'prog_spring_rise',    weight: 30, label: '希望の春' },
+      { id: 'prog_spring_simple',  weight: 25, label: '爽やかな春' },
     ],
     bassPatternCandidates: [
       { id: 'bass_spring_whole', weight: 50 }, // 安定
