@@ -1,5 +1,5 @@
 import type { RealMoodId } from '../../../theory/types'
-import type { MoodRecord }  from '../types'
+import type { MoodRecord, DrumPatternCandidateRef } from '../types'
 
 // ComposerEngine の起点テーブル
 // 各候補の weight は「他候補との相対比率」であり、合計が100である必要はない
@@ -21,10 +21,10 @@ export const moods: Record<RealMoodId, MoodRecord> = {
       { id: 'bass_happy_pedal', weight: 20 }, // トニックペダル
     ],
     drumPatternCandidates: [
-      { id: 'drum_4beat_strong', weight: 50 }, // 力強い
-      { id: 'drum_4beat_groove', weight: 30 }, // グルーヴ
-      { id: 'drum_halfbeat',     weight: 20 }, // ゆったり
-    ],
+      { id: 'drum_4beat_strong', weight: 50, label: '力強いビート'     },
+      { id: 'drum_4beat_groove', weight: 30, label: 'ノリのあるビート' },
+      { id: 'drum_halfbeat',     weight: 20, label: 'ゆったりしたビート' },
+    ] satisfies DrumPatternCandidateRef[],
     instrumentPresetId: 'preset_default',
   },
 
@@ -44,10 +44,10 @@ export const moods: Record<RealMoodId, MoodRecord> = {
       { id: 'bass_night_half',  weight: 20 }, // 半音符（少し動く）
     ],
     drumPatternCandidates: [
-      { id: 'drum_4beat_medium',   weight: 45 }, // 中程度
-      { id: 'drum_halfbeat',       weight: 35 }, // スパース
-      { id: 'drum_halfbeat_soft',  weight: 20 }, // 静寂
-    ],
+      { id: 'drum_4beat_medium',  weight: 45, label: 'おだやかなビート' },
+      { id: 'drum_halfbeat',      weight: 35, label: 'ゆったりしたビート' },
+      { id: 'drum_halfbeat_soft', weight: 20, label: '静かなビート'     },
+    ] satisfies DrumPatternCandidateRef[],
     instrumentPresetId: 'preset_default',
   },
 
@@ -67,10 +67,10 @@ export const moods: Record<RealMoodId, MoodRecord> = {
       { id: 'bass_rain_half',  weight: 20 }, // 半音符（やや動く）
     ],
     drumPatternCandidates: [
-      { id: 'drum_4beat_soft',    weight: 40 }, // 控えめ
-      { id: 'drum_halfbeat',      weight: 35 }, // スパース
-      { id: 'drum_halfbeat_soft', weight: 25 }, // 極めて静か
-    ],
+      { id: 'drum_4beat_soft',    weight: 40, label: '控えめなビート' },
+      { id: 'drum_halfbeat',      weight: 35, label: 'ゆったりしたビート' },
+      { id: 'drum_halfbeat_soft', weight: 25, label: '雨音のように静かに' },
+    ] satisfies DrumPatternCandidateRef[],
     instrumentPresetId: 'preset_default',
   },
 
@@ -90,10 +90,10 @@ export const moods: Record<RealMoodId, MoodRecord> = {
       { id: 'bass_spring_pedal', weight: 20 }, // G2 ペダル
     ],
     drumPatternCandidates: [
-      { id: 'drum_4beat_strong', weight: 45 }, // 力強い
-      { id: 'drum_4beat_medium', weight: 35 }, // 中程度
-      { id: 'drum_halfbeat',     weight: 20 }, // ゆったり
-    ],
+      { id: 'drum_4beat_strong', weight: 45, label: '弾むビート'       },
+      { id: 'drum_4beat_medium', weight: 35, label: 'おだやかなビート' },
+      { id: 'drum_halfbeat',     weight: 20, label: 'ゆったりしたビート' },
+    ] satisfies DrumPatternCandidateRef[],
     instrumentPresetId: 'preset_default',
   },
 }

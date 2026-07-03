@@ -15,6 +15,7 @@ export type UserIntent = {
   mood: MoodId
   // Phase4以降に解放される選択肢（未指定時はComposerEngineが自動決定）
   chordProgressionId?: string
+  drumPatternId?: string
   tempo?: number
   instrumentPresetId?: string
 }
@@ -111,6 +112,12 @@ export type ProgressionOption = {
   id:     string
   label:  string
   chords: string[]
+}
+
+// ドラム選択画面に渡すオプション
+export type DrumOption = {
+  id:    string
+  label: string
 }
 
 // PlaybackEngine のイベント定義

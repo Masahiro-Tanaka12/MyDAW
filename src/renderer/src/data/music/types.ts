@@ -11,6 +11,11 @@ export type ProgressionCandidateRef = WeightedRef & {
   label: string  // コード選択画面に表示する日本語ラベル（例: "王道の明るさ"）
 }
 
+// ドラムパターン候補（ラベルを持つ）
+export type DrumPatternCandidateRef = WeightedRef & {
+  label: string  // ドラム選択画面に表示する日本語ラベル（例: "力強いビート"）
+}
+
 export type ProgressionRecord = {
   id:     string
   chords: string[]
@@ -41,8 +46,8 @@ export type MoodRecord = {
   bpm:                   number
   key:                   string
   scale:                 'major' | 'minor'
-  progressionCandidates: ProgressionCandidateRef[]  // ラベル付き
+  progressionCandidates: ProgressionCandidateRef[]   // ラベル付き
   bassPatternCandidates: WeightedRef[]
-  drumPatternCandidates: WeightedRef[]
+  drumPatternCandidates: DrumPatternCandidateRef[]   // ラベル付き
   instrumentPresetId:    string
 }

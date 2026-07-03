@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { MoodId, RealMoodId, SongBlueprint, SavedSong, ProgressionOption } from './theory/types'
+import type { MoodId, RealMoodId, SongBlueprint, SavedSong, ProgressionOption, DrumOption } from './theory/types'
 import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
 import { SongRepository } from './repository/SongRepository'
 
 type Status      = 'idle' | 'loading' | 'error' | 'playing' | 'done'
-type Screen      = 'home' | 'chord' | 'stepup' | 'mysongs'
+type Screen      = 'home' | 'chord' | 'drum' | 'stepup' | 'mysongs'
 type PlayContext = 'compose' | 'library'
 
 const MOODS: { emoji: string; label: string; id: MoodId }[] = [
@@ -131,6 +131,32 @@ const CSS = `
   .chord-card-btn:nth-child(2) { animation-delay: 0.12s; }
   .chord-card-btn:nth-child(3) { animation-delay: 0.19s; }
 
+  .drum-card-btn {
+    animation: fadeInUp 0.35s ease both;
+    background: rgba(52, 211, 153, 0.04);
+    border: 1.5px solid rgba(52, 211, 153, 0.18);
+    border-radius: 20px;
+    padding: 22px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.2s, border-color 0.2s, transform 0.18s, box-shadow 0.18s;
+    font-family: 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+  }
+  .drum-card-btn:hover {
+    background: rgba(52, 211, 153, 0.12);
+    border-color: rgba(52, 211, 153, 0.5);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .drum-card-btn:active { transform: translateY(0); transition-duration: 0.07s; }
+  .drum-card-btn:nth-child(1) { animation-delay: 0.05s; }
+  .drum-card-btn:nth-child(2) { animation-delay: 0.12s; }
+  .drum-card-btn:nth-child(3) { animation-delay: 0.19s; }
+
   .stepup-card {
     animation: fadeInUp 0.4s ease both;
     background: rgba(255, 255, 255, 0.03);
@@ -164,6 +190,8 @@ export default function App(): JSX.Element {
   const [editingTitle,    setEditingTitle]    = useState('')
   const [selectedMoodId,  setSelectedMoodId]  = useState<RealMoodId | null>(null)
   const [chordOptions,    setChordOptions]    = useState<ProgressionOption[]>([])
+  const [selectedChordId, setSelectedChordId] = useState<string | null>(null)
+  const [drumOptions,     setDrumOptions]     = useState<DrumOption[]>([])
 
   useEffect(() => {
     const offPlay = playbackEngine.on('play', () => setStatus('playing'))
@@ -197,9 +225,20 @@ export default function App(): JSX.Element {
     setScreen('chord')
   }
 
-  const handleChooseChord = async (progressionId: string): Promise<void> => {
+  const handleChooseChord = (progressionId: string): void => {
     if (!selectedMoodId) return
-    const blueprint = composerEngine.compose({ mood: selectedMoodId, chordProgressionId: progressionId })
+    setSelectedChordId(progressionId)
+    setDrumOptions(composerEngine.getDrumOptions(selectedMoodId))
+    setScreen('drum')
+  }
+
+  const handleChooseDrum = (drumPatternId: string): void => {
+    if (!selectedMoodId || !selectedChordId) return
+    const blueprint = composerEngine.compose({
+      mood: selectedMoodId,
+      chordProgressionId: selectedChordId,
+      drumPatternId,
+    })
     startPlay(blueprint)
   }
 
@@ -410,6 +449,42 @@ export default function App(): JSX.Element {
                     </span>
                   ))}
                 </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // ── ドラム選択画面 ──────────────────────────────────────────────
+  if (screen === 'drum') {
+    const MOOD_LABELS: Record<RealMoodId, string> = {
+      happy: '😊 元気', night: '🌙 夜', rain: '🌧 雨', spring: '🌸 春',
+    }
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={s.root}>
+          <div style={s.subHeader}>
+            <button className="back-btn" onClick={() => setScreen('chord')} style={s.backBtn}>
+              ← もどる
+            </button>
+            <h2 style={{ ...s.subTitle, color: '#6ee7b7' }}>
+              {selectedMoodId ? MOOD_LABELS[selectedMoodId] : ''}
+            </h2>
+            <p style={s.subSubtitle}>リズムの雰囲気を選んでください</p>
+          </div>
+
+          <div style={s.cardList}>
+            {drumOptions.map((opt) => (
+              <button
+                key={opt.id}
+                className="drum-card-btn"
+                onClick={() => handleChooseDrum(opt.id)}
+              >
+                <span style={s.drumIcon}>🥁</span>
+                <span style={s.drumLabel}>{opt.label}</span>
               </button>
             ))}
           </div>
@@ -771,6 +846,13 @@ const s = {
     transition: 'background 0.18s, color 0.18s, border-color 0.18s',
     fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
     minWidth: '30px', textAlign: 'center' as const,
+  },
+
+  // ── ドラム選択カード ──
+  drumIcon: { fontSize: '1.6rem', lineHeight: 1, flexShrink: 0 },
+  drumLabel: {
+    fontSize: '1.05rem', fontWeight: 700,
+    color: '#6ee7b7', letterSpacing: '0.03em',
   },
 
   // ── コード選択カード ──
