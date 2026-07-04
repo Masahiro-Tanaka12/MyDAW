@@ -8,8 +8,9 @@ type Handler<K extends keyof PlaybackEventMap> = (
   payload: PlaybackEventMap[K]
 ) => void
 
-const FADE_IN_SEC  = 0.8
-const FADE_OUT_SEC = 1.5
+const FADE_IN_SEC    = 0.8
+const FADE_OUT_SEC   = 1.5
+const TARGET_LOOP_SEC = 45  // 目標尺（秒）。小節境界でぴったり終わるよう繰り上げる
 
 export class PlaybackEngine {
   private handlers    = new Map<string, Handler<keyof PlaybackEventMap>[]>()
@@ -106,6 +107,12 @@ export class PlaybackEngine {
 
     const bars = blueprint.chordProgression.bars
 
+    // 4小節ブロックをループ再生。全プレイヤーのイベントは [0, bars*m) に収まるため
+    // Transport がループ境界で先頭に戻るたびに自動的に再発火される
+    Tone.getTransport().loop      = true
+    Tone.getTransport().loopStart = 0
+    Tone.getTransport().loopEnd   = `${bars}m`
+
     for (const track of blueprint.tracks) {
       if (track.kind === 'chord') {
         this.chordPlayer.schedule(track)
@@ -124,9 +131,12 @@ export class PlaybackEngine {
 
     this.emit('play', { bpm: blueprint.bpm })
 
+    // 1周の秒数から、目標尺に達する最小ループ回数を求め小節境界でぴったり終わらせる
     const songSeconds = bars * 4 * (60 / blueprint.bpm)
+    const loopCount   = Math.ceil(TARGET_LOOP_SEC / songSeconds)
+    const totalSec    = songSeconds * loopCount
 
-    const fadeOutStartMs = Math.max(0, songSeconds - FADE_OUT_SEC + 0.3) * 1000
+    const fadeOutStartMs = Math.max(0, totalSec - FADE_OUT_SEC + 0.3) * 1000
     this.fadeTimer = setTimeout(() => {
       this.masterVolume.volume.rampTo(-60, FADE_OUT_SEC)
     }, fadeOutStartMs)
@@ -134,11 +144,12 @@ export class PlaybackEngine {
     this.endTimer = setTimeout(() => {
       this.cleanup()
       this.emit('end', {})
-    }, (songSeconds + 0.5) * 1000)
+    }, (totalSec + 0.5) * 1000)
   }
 
   stop(): void {
     this.clearTimers()
+    Tone.getTransport().loop = false
     Tone.getTransport().stop()
     Tone.getTransport().cancel()
     this.masterVolume.volume.cancelScheduledValues(Tone.now())
