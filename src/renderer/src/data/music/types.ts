@@ -1,5 +1,5 @@
-import type { NoteEvent, MixConfig } from '../../theory/types'
-import type { ChordQuality }         from '../../theory/chordTheory'
+import type { NoteEvent, MixConfig, RealMoodId } from '../../theory/types'
+import type { ChordQuality }                     from '../../theory/chordTheory'
 
 // 重み付き候補参照
 export type WeightedRef = {
@@ -11,10 +11,11 @@ export type WeightedRef = {
 export type ProgressionTemplate = {
   id:               string
   scale:            'major' | 'minor'
-  degrees:          number[]                             // ダイアトニック度数（1〜7）
+  degrees:          number[]                              // ダイアトニック度数（1〜7）
   qualityOverrides: Partial<Record<number, ChordQuality>> // [配列インデックス] → 品質例外
   bars:             number
-  alias:            string  // 日本語ラベル
+  alias:            string       // 日本語ラベル
+  moodTags?:        RealMoodId[] // 紐づくムード。未指定 = 全ムード共通テンプレート
 }
 
 // ベースパターンの1イベント（度数ベース）
@@ -44,6 +45,7 @@ export type ProgressionRecord = {
 
 export type BassPatternRecord = {
   id:     string
+  bars:   number               // このパターン自身の小節長（タイリングの単位）
   events: BassEventTemplate[]  // 度数ベース。Generator が実キーで NoteEvent に解決する
 }
 

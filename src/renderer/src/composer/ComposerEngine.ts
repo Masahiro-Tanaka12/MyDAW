@@ -2,6 +2,7 @@ import type { UserIntent, SongBlueprint, RealMoodId, ProgressionOption, DrumOpti
 import { moods }                from '../data/music/moods'
 import { progressionTemplates } from '../data/music/progression-templates'
 import { SMART_FX_OPTIONS }     from '../data/music/smart-fx'
+import { SCALE_TRANSITIONS }    from '../data/music/theory/transitions'
 import { Selector }             from './Selector'
 import { generate }             from './Generator'
 import {
@@ -9,6 +10,10 @@ import {
   chordToSymbol,
   DIATONIC_QUALITY,
 } from '../theory/chordTheory'
+
+const DEGREE_LABELS: Record<number, string> = {
+  1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI', 7: 'VII',
+}
 
 const REAL_MOODS: RealMoodId[] = ['happy', 'night', 'rain', 'spring']
 
@@ -42,6 +47,42 @@ export class ComposerEngine {
     return SMART_FX_OPTIONS
   }
 
+  // 全テンプレートから進行オプションを返す（任意のムードフィルタ対応）
+  // moodFilter 指定時: moodTags 未設定（共通）または moodTags に含まれるものだけ返す
+  // moodFilter 未指定時: 全テンプレートを返す
+  getAllProgressionOptions(moodFilter?: RealMoodId): ProgressionOption[] {
+    const refMood = moodFilter ? moods[moodFilter] : null
+    const key     = refMood?.key ?? 'C'
+
+    return Object.values(progressionTemplates)
+      .filter(tmpl =>
+        !moodFilter || !tmpl.moodTags || tmpl.moodTags.includes(moodFilter),
+      )
+      .map(tmpl => {
+        const chords = tmpl.degrees.map((deg, i) => {
+          const quality = tmpl.qualityOverrides[i] ?? DIATONIC_QUALITY[tmpl.scale][deg]
+          return chordToSymbol(resolveChordRoot(key, tmpl.scale, deg), quality)
+        })
+        return { id: tmpl.id, label: tmpl.alias, chords }
+      })
+  }
+
+  // 次に選べる度数の候補を重み付きで返す（「1コードずつ選ぶ」UI 用）
+  getNextDegreeOptions(
+    scale: 'major' | 'minor',
+    currentDegree: number,
+  ): { degree: number; label: string; weight: number }[] {
+    const weights = SCALE_TRANSITIONS[scale][currentDegree]
+    if (!weights) return []
+    return (Object.entries(weights) as [string, number][])
+      .map(([deg, weight]) => ({
+        degree: Number(deg),
+        label:  DEGREE_LABELS[Number(deg)] ?? `${deg}`,
+        weight,
+      }))
+      .sort((a, b) => b.weight - a.weight)
+  }
+
   compose(intent: UserIntent): SongBlueprint {
     const seed   = Math.floor(Math.random() * 1_000_000)
     const moodId: RealMoodId =
@@ -60,7 +101,7 @@ export class ComposerEngine {
       ...(intent.smartFxId          && { smartFxId:     intent.smartFxId }),
     }
 
-    return { ...generate(mood, finalSelection), seed, moodId }
+    return { ...generate(mood, finalSelection, intent.bpm), seed, moodId }
   }
 }
 

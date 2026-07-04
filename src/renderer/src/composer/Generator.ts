@@ -12,10 +12,18 @@ import {
   DIATONIC_QUALITY,
 } from '../theory/chordTheory'
 
+function shiftBarTime(time: string, barOffset: number): string {
+  if (time.endsWith('m')) {
+    return `${parseFloat(time.slice(0, -1)) + barOffset}m`
+  }
+  const [bar, ...rest] = time.split(':')
+  return [parseInt(bar, 10) + barOffset, ...rest].join(':')
+}
+
 // 「生成」の責務を担う純粋関数
 // SelectionSet（選ばれた ID 群）+ MoodRecord → SongBlueprint（seed/moodId は ComposerEngine が付与）
 // 副作用なし・同じ入力なら常に同じ出力（テスト容易）
-export function generate(mood: MoodRecord, selection: SelectionSet): Omit<SongBlueprint, 'seed' | 'moodId'> {
+export function generate(mood: MoodRecord, selection: SelectionSet, bpmOverride?: number): Omit<SongBlueprint, 'seed' | 'moodId'> {
   const template = progressionTemplates[selection.progressionId]
   const bass     = bassPatterns[selection.bassPatternId]
   const drum     = drumPatterns[selection.drumPatternId]
@@ -31,17 +39,29 @@ export function generate(mood: MoodRecord, selection: SelectionSet): Omit<SongBl
 
   const chordProgression = { id: template.id, chords, bars: template.bars }
 
-  // ベースパターンを実ルート音に解決（degree → key + template.scale で計算）
-  const chordRoots = template.degrees.map(d => resolveChordRoot(mood.key, template.scale, d))
-  const bassNotes: NoteEvent[] = bass.events.map(ev => ({
-    time:     ev.time,
-    note:     chordRoots[ev.chordIndex % chordRoots.length] + ev.octave,
-    duration: ev.duration,
-    velocity: ev.velocity,
-  }))
+  // ベースパターンを実ルート音に解決（タイリング対応）
+  const chordRoots  = template.degrees.map(d => resolveChordRoot(mood.key, template.scale, d))
+  const patternBars = bass.bars
+  const repeatCount = Math.ceil(template.bars / patternBars)
+  const bassNotes: NoteEvent[] = []
+  for (let r = 0; r < repeatCount; r++) {
+    const barOffset = r * patternBars
+    for (const ev of bass.events) {
+      const evBar = ev.time.endsWith('m')
+        ? parseFloat(ev.time.slice(0, -1))
+        : parseInt(ev.time.split(':')[0], 10)
+      if (evBar + barOffset >= template.bars) continue
+      bassNotes.push({
+        time:     shiftBarTime(ev.time, barOffset),
+        note:     chordRoots[(ev.chordIndex + barOffset) % chordRoots.length] + ev.octave,
+        duration: ev.duration,
+        velocity: ev.velocity,
+      })
+    }
+  }
 
   return {
-    bpm:   mood.bpm,
+    bpm:   bpmOverride ?? mood.bpm,
     key:   mood.key,
     scale: mood.scale,
     chordProgression,

@@ -18,6 +18,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
   // ──── 😊 元気 ─────────────────────────────────────────────────────────
   bass_happy_whole: {
     id: 'bass_happy_whole',
+    bars: 4,
     events: [
       { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.80 },
       { time: '1m', chordIndex: 1, octave: 2, duration: '1m', velocity: 0.80 },
@@ -28,6 +29,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
 
   bass_happy_half: {
     id: 'bass_happy_half',
+    bars: 4,
     events: [
       { time: '0:0:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.80 },
       { time: '0:2:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.70 },
@@ -42,6 +44,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
 
   bass_happy_pedal: {
     id: 'bass_happy_pedal',
+    bars: 4,
     events: [
       { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.75 },
       { time: '1m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.75 },
@@ -54,6 +57,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
   // 夜のトニックは A minor。A をオクターブ 1（A1）にして深い低音を出す
   bass_night_whole: {
     id: 'bass_night_whole',
+    bars: 4,
     events: [
       { time: '0m', chordIndex: 0, octave: 1, duration: '1m', velocity: 0.70 },
       { time: '1m', chordIndex: 1, octave: 2, duration: '1m', velocity: 0.70 },
@@ -64,6 +68,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
 
   bass_night_half: {
     id: 'bass_night_half',
+    bars: 4,
     events: [
       { time: '0:0:0', chordIndex: 0, octave: 1, duration: '2n', velocity: 0.70 },
       { time: '0:2:0', chordIndex: 0, octave: 1, duration: '2n', velocity: 0.60 },
@@ -78,6 +83,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
 
   bass_night_pedal: {
     id: 'bass_night_pedal',
+    bars: 4,
     events: [
       { time: '0m', chordIndex: 0, octave: 1, duration: '1m', velocity: 0.65 },
       { time: '1m', chordIndex: 0, octave: 1, duration: '1m', velocity: 0.65 },
@@ -89,6 +95,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
   // ──── 🌧 雨 ───────────────────────────────────────────────────────────
   bass_rain_whole: {
     id: 'bass_rain_whole',
+    bars: 4,
     events: [
       { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.70 },
       { time: '1m', chordIndex: 1, octave: 2, duration: '1m', velocity: 0.70 },
@@ -99,6 +106,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
 
   bass_rain_half: {
     id: 'bass_rain_half',
+    bars: 4,
     events: [
       { time: '0:0:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.65 },
       { time: '0:2:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.55 },
@@ -113,6 +121,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
 
   bass_rain_pedal: {
     id: 'bass_rain_pedal',
+    bars: 4,
     events: [
       { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.60 },
       { time: '1m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.60 },
@@ -124,6 +133,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
   // ──── 🌸 春 ───────────────────────────────────────────────────────────
   bass_spring_whole: {
     id: 'bass_spring_whole',
+    bars: 4,
     events: [
       { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.80 },
       { time: '1m', chordIndex: 1, octave: 2, duration: '1m', velocity: 0.80 },
@@ -134,6 +144,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
 
   bass_spring_half: {
     id: 'bass_spring_half',
+    bars: 4,
     events: [
       { time: '0:0:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.80 },
       { time: '0:2:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.70 },
@@ -148,6 +159,7 @@ export const bassPatterns: Record<string, BassPatternRecord> = {
 
   bass_spring_pedal: {
     id: 'bass_spring_pedal',
+    bars: 4,
     events: [
       { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.72 },
       { time: '1m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.72 },

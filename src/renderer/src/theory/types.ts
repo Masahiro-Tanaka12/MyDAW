@@ -17,7 +17,7 @@ export type UserIntent = {
   chordProgressionId?: string
   drumPatternId?: string
   smartFxId?: string
-  tempo?: number
+  bpm?: number              // 未指定時は mood のデフォルト BPM を使用
   instrumentPresetId?: string
 }
 
