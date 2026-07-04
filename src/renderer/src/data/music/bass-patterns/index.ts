@@ -1,103 +1,158 @@
 import type { BassPatternRecord } from '../types'
-import type { NoteEvent }        from '../../../theory/types'
 
-// ── ヘルパー: 半音符パターン（4小節分）──────────────────────────────────
-// roots: 各バーのルート音（4要素）
-function halfNotes(roots: [string, string, string, string], vel = 0.8): NoteEvent[] {
-  return roots.flatMap((note, bar) => [
-    { time: `${bar}:0:0`, note, duration: '2n', velocity: vel      },
-    { time: `${bar}:2:0`, note, duration: '2n', velocity: vel - 0.1 },
-  ])
-}
-
-// ── ヘルパー: トニックペダル（4小節同じ音）───────────────────────────────
-function tonicPedal(note: string, vel = 0.75): NoteEvent[] {
-  return [0, 1, 2, 3].map(bar => ({
-    time: `${bar}m`, note, duration: '1m', velocity: vel,
-  }))
-}
-
+/**
+ * ベースパターン（度数ベース）
+ *
+ * events[n].chordIndex : コード進行の n 番目のコードのルート音を使う（0 始まり）
+ * events[n].octave     : そのルート音をどのオクターブで鳴らすか
+ *
+ * Generator.ts が resolveChordRoot(key, scale, degrees[chordIndex]) + octave
+ * に展開して NoteEvent に変換する。
+ *
+ * octave 選定方針:
+ *   - 基本はオクターブ 2（C2〜B2 帯 = MIDI 36〜47）
+ *   - 夜（A minor）のトニック A は低音感のため 1 に設定
+ */
 export const bassPatterns: Record<string, BassPatternRecord> = {
 
-  // ──── 😊 元気 (ルート音列: C2/G2/A2/F2) ─────────────────────────────
-  // whole: 各コードのルートを1小節伸ばす（安定・シンプル）
+  // ──── 😊 元気 ─────────────────────────────────────────────────────────
   bass_happy_whole: {
     id: 'bass_happy_whole',
-    notes: [
-      { time: '0m', note: 'C2', duration: '1m', velocity: 0.8 },
-      { time: '1m', note: 'G2', duration: '1m', velocity: 0.8 },
-      { time: '2m', note: 'A2', duration: '1m', velocity: 0.8 },
-      { time: '3m', note: 'F2', duration: '1m', velocity: 0.8 },
+    events: [
+      { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.80 },
+      { time: '1m', chordIndex: 1, octave: 2, duration: '1m', velocity: 0.80 },
+      { time: '2m', chordIndex: 2, octave: 2, duration: '1m', velocity: 0.80 },
+      { time: '3m', chordIndex: 3, octave: 2, duration: '1m', velocity: 0.80 },
     ],
   },
-  // half: ルートを半小節ずつ2回打つ（躍動感）
+
   bass_happy_half: {
     id: 'bass_happy_half',
-    notes: halfNotes(['C2', 'G2', 'A2', 'F2'], 0.8),
+    events: [
+      { time: '0:0:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.80 },
+      { time: '0:2:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '1:0:0', chordIndex: 1, octave: 2, duration: '2n', velocity: 0.80 },
+      { time: '1:2:0', chordIndex: 1, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '2:0:0', chordIndex: 2, octave: 2, duration: '2n', velocity: 0.80 },
+      { time: '2:2:0', chordIndex: 2, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '3:0:0', chordIndex: 3, octave: 2, duration: '2n', velocity: 0.80 },
+      { time: '3:2:0', chordIndex: 3, octave: 2, duration: '2n', velocity: 0.70 },
+    ],
   },
-  // pedal: トニック C2 を4小節保持（骨太な土台）
+
   bass_happy_pedal: {
     id: 'bass_happy_pedal',
-    notes: tonicPedal('C2', 0.75),
+    events: [
+      { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.75 },
+      { time: '1m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.75 },
+      { time: '2m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.75 },
+      { time: '3m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.75 },
+    ],
   },
 
-  // ──── 🌙 夜 (ルート音列: A1/E2/F2/G2) ──────────────────────────────
+  // ──── 🌙 夜 ───────────────────────────────────────────────────────────
+  // 夜のトニックは A minor。A をオクターブ 1（A1）にして深い低音を出す
   bass_night_whole: {
     id: 'bass_night_whole',
-    notes: [
-      { time: '0m', note: 'A1', duration: '1m', velocity: 0.7 },
-      { time: '1m', note: 'E2', duration: '1m', velocity: 0.7 },
-      { time: '2m', note: 'F2', duration: '1m', velocity: 0.7 },
-      { time: '3m', note: 'G2', duration: '1m', velocity: 0.7 },
+    events: [
+      { time: '0m', chordIndex: 0, octave: 1, duration: '1m', velocity: 0.70 },
+      { time: '1m', chordIndex: 1, octave: 2, duration: '1m', velocity: 0.70 },
+      { time: '2m', chordIndex: 2, octave: 2, duration: '1m', velocity: 0.70 },
+      { time: '3m', chordIndex: 3, octave: 2, duration: '1m', velocity: 0.70 },
     ],
   },
+
   bass_night_half: {
     id: 'bass_night_half',
-    notes: halfNotes(['A1', 'E2', 'F2', 'G2'], 0.7),
+    events: [
+      { time: '0:0:0', chordIndex: 0, octave: 1, duration: '2n', velocity: 0.70 },
+      { time: '0:2:0', chordIndex: 0, octave: 1, duration: '2n', velocity: 0.60 },
+      { time: '1:0:0', chordIndex: 1, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '1:2:0', chordIndex: 1, octave: 2, duration: '2n', velocity: 0.60 },
+      { time: '2:0:0', chordIndex: 2, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '2:2:0', chordIndex: 2, octave: 2, duration: '2n', velocity: 0.60 },
+      { time: '3:0:0', chordIndex: 3, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '3:2:0', chordIndex: 3, octave: 2, duration: '2n', velocity: 0.60 },
+    ],
   },
-  // pedal: A1 は夜らしい深みある低音
+
   bass_night_pedal: {
     id: 'bass_night_pedal',
-    notes: tonicPedal('A1', 0.65),
+    events: [
+      { time: '0m', chordIndex: 0, octave: 1, duration: '1m', velocity: 0.65 },
+      { time: '1m', chordIndex: 0, octave: 1, duration: '1m', velocity: 0.65 },
+      { time: '2m', chordIndex: 0, octave: 1, duration: '1m', velocity: 0.65 },
+      { time: '3m', chordIndex: 0, octave: 1, duration: '1m', velocity: 0.65 },
+    ],
   },
 
-  // ──── 🌧 雨 (ルート音列: D2/A1/F2/C2) ──────────────────────────────
+  // ──── 🌧 雨 ───────────────────────────────────────────────────────────
   bass_rain_whole: {
     id: 'bass_rain_whole',
-    notes: [
-      { time: '0m', note: 'D2', duration: '1m', velocity: 0.7 },
-      { time: '1m', note: 'A1', duration: '1m', velocity: 0.7 },
-      { time: '2m', note: 'F2', duration: '1m', velocity: 0.7 },
-      { time: '3m', note: 'C2', duration: '1m', velocity: 0.7 },
+    events: [
+      { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.70 },
+      { time: '1m', chordIndex: 1, octave: 2, duration: '1m', velocity: 0.70 },
+      { time: '2m', chordIndex: 2, octave: 2, duration: '1m', velocity: 0.70 },
+      { time: '3m', chordIndex: 3, octave: 2, duration: '1m', velocity: 0.70 },
     ],
-  },
-  bass_rain_half: {
-    id: 'bass_rain_half',
-    notes: halfNotes(['D2', 'A1', 'F2', 'C2'], 0.65),
-  },
-  // pedal: D2 の静かな持続（雨音のような）
-  bass_rain_pedal: {
-    id: 'bass_rain_pedal',
-    notes: tonicPedal('D2', 0.6),
   },
 
-  // ──── 🌸 春 (ルート音列: G2/D2/E2/C2) ──────────────────────────────
-  bass_spring_whole: {
-    id: 'bass_spring_whole',
-    notes: [
-      { time: '0m', note: 'G2', duration: '1m', velocity: 0.8 },
-      { time: '1m', note: 'D2', duration: '1m', velocity: 0.8 },
-      { time: '2m', note: 'E2', duration: '1m', velocity: 0.8 },
-      { time: '3m', note: 'C2', duration: '1m', velocity: 0.8 },
+  bass_rain_half: {
+    id: 'bass_rain_half',
+    events: [
+      { time: '0:0:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.65 },
+      { time: '0:2:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.55 },
+      { time: '1:0:0', chordIndex: 1, octave: 2, duration: '2n', velocity: 0.65 },
+      { time: '1:2:0', chordIndex: 1, octave: 2, duration: '2n', velocity: 0.55 },
+      { time: '2:0:0', chordIndex: 2, octave: 2, duration: '2n', velocity: 0.65 },
+      { time: '2:2:0', chordIndex: 2, octave: 2, duration: '2n', velocity: 0.55 },
+      { time: '3:0:0', chordIndex: 3, octave: 2, duration: '2n', velocity: 0.65 },
+      { time: '3:2:0', chordIndex: 3, octave: 2, duration: '2n', velocity: 0.55 },
     ],
   },
+
+  bass_rain_pedal: {
+    id: 'bass_rain_pedal',
+    events: [
+      { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.60 },
+      { time: '1m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.60 },
+      { time: '2m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.60 },
+      { time: '3m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.60 },
+    ],
+  },
+
+  // ──── 🌸 春 ───────────────────────────────────────────────────────────
+  bass_spring_whole: {
+    id: 'bass_spring_whole',
+    events: [
+      { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.80 },
+      { time: '1m', chordIndex: 1, octave: 2, duration: '1m', velocity: 0.80 },
+      { time: '2m', chordIndex: 2, octave: 2, duration: '1m', velocity: 0.80 },
+      { time: '3m', chordIndex: 3, octave: 2, duration: '1m', velocity: 0.80 },
+    ],
+  },
+
   bass_spring_half: {
     id: 'bass_spring_half',
-    notes: halfNotes(['G2', 'D2', 'E2', 'C2'], 0.8),
+    events: [
+      { time: '0:0:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.80 },
+      { time: '0:2:0', chordIndex: 0, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '1:0:0', chordIndex: 1, octave: 2, duration: '2n', velocity: 0.80 },
+      { time: '1:2:0', chordIndex: 1, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '2:0:0', chordIndex: 2, octave: 2, duration: '2n', velocity: 0.80 },
+      { time: '2:2:0', chordIndex: 2, octave: 2, duration: '2n', velocity: 0.70 },
+      { time: '3:0:0', chordIndex: 3, octave: 2, duration: '2n', velocity: 0.80 },
+      { time: '3:2:0', chordIndex: 3, octave: 2, duration: '2n', velocity: 0.70 },
+    ],
   },
-  // pedal: G2 の爽やかな持続
+
   bass_spring_pedal: {
     id: 'bass_spring_pedal',
-    notes: tonicPedal('G2', 0.72),
+    events: [
+      { time: '0m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.72 },
+      { time: '1m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.72 },
+      { time: '2m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.72 },
+      { time: '3m', chordIndex: 0, octave: 2, duration: '1m', velocity: 0.72 },
+    ],
   },
 }

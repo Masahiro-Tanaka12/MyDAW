@@ -5,6 +5,7 @@ export type SelectionSet = {
   bassPatternId:      string
   drumPatternId:      string
   instrumentPresetId: string
+  smartFxId:          string
 }
 
 // 「選択」の責務を担うクラス
@@ -36,6 +37,7 @@ export class Selector {
       bassPatternId:      this.pick(mood.bassPatternCandidates, this.last.bassPatternId),
       drumPatternId:      this.pick(mood.drumPatternCandidates, this.last.drumPatternId),
       instrumentPresetId: mood.instrumentPresetId,
+      smartFxId:          'preset_neutral',
     }
     this.last = result
     return result

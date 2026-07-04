@@ -1,43 +1,55 @@
 import * as Tone from 'tone'
 import type { ChordTrack } from '../../theory/types'
+import { parseChordSymbol, chordSymbolToNotes } from '../../theory/chordTheory'
 
 const STRUM_OFFSET = 0.018
+const BASE_VOLUME  = -8  // dB（シンセ固有の基準音量）
 
-const CHORD_NOTES: Record<string, string[]> = {
-  'C':  ['C3', 'E3', 'G3', 'C4'],
-  'Cm': ['C3', 'Eb3', 'G3'],
-  'D':  ['D3', 'A3', 'D4'],
-  'Dm': ['D3', 'A3', 'D4', 'F4'],
-  'E':  ['E2', 'B2', 'E3', 'G#3'],
-  'Em': ['E2', 'B2', 'E3', 'G3'],
-  'F':  ['F3', 'A3', 'C4', 'F4'],
-  'Fm': ['F3', 'Ab3', 'C4'],
-  'G':  ['G3', 'B3', 'D4', 'G4'],
-  'Gm': ['G3', 'Bb3', 'D4'],
-  'A':  ['A2', 'E3', 'A3', 'C#4'],
-  'Am': ['A2', 'E3', 'A3', 'C4'],
-  'B':  ['B2', 'F#3', 'B3', 'D#4'],
-  'Bm': ['B2', 'F#3', 'B3', 'D4'],
-}
-
-function resolve(chord: string): string[] {
-  return CHORD_NOTES[chord] ?? ['C3', 'E3', 'G3']
+// コードシンボル文字列 → Tone.js ノート配列（オクターブ 3 起点）
+function resolve(symbol: string): string[] {
+  const { root, quality } = parseChordSymbol(symbol)
+  return chordSymbolToNotes(root, quality, 3)
 }
 
 export class ChordPlayer {
-  private synth: Tone.PolySynth | null = null
+  private synth:      Tone.PolySynth | null = null
+  private panner:     Tone.Panner    | null = null
+  private eq3:        Tone.EQ3       | null = null
+  private reverbSend: Tone.Gain      | null = null
 
-  async load(output: Tone.Volume): Promise<void> {
+  async load(output: Tone.ToneAudioNode, reverbBus: Tone.Gain): Promise<void> {
     if (this.synth) return
+
+    this.eq3        = new Tone.EQ3()
+    this.panner     = new Tone.Panner(0)
+    this.reverbSend = new Tone.Gain(0)
+
     this.synth = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'triangle' },
       envelope: { attack: 0.005, decay: 0.4, sustain: 0.3, release: 2.0 },
-      volume: -8,
-    }).connect(output)
+      volume: BASE_VOLUME,
+    })
+
+    // ドライ: synth → panner → eq3 → output
+    this.synth.chain(this.panner, this.eq3, output)
+    // リバーブセンド: eq3 → reverbSend → reverbBus
+    this.eq3.connect(this.reverbSend)
+    this.reverbSend.connect(reverbBus)
   }
 
   schedule(track: ChordTrack): void {
-    if (!this.synth) return
+    if (!this.synth || !this.eq3 || !this.panner || !this.reverbSend) return
+
+    const mix = track.mixConfig
+    if (mix) {
+      this.synth.volume.value      = BASE_VOLUME + mix.volume
+      this.panner.pan.value        = mix.pan
+      this.eq3.low.value           = mix.eq.low
+      this.eq3.mid.value           = mix.eq.mid
+      this.eq3.high.value          = mix.eq.high
+      this.reverbSend.gain.value   = mix.reverb
+    }
+
     const { chords, bars } = track.progression
     const barsPerChord = bars / chords.length
 
@@ -53,6 +65,9 @@ export class ChordPlayer {
 
   dispose(): void {
     this.synth?.dispose()
-    this.synth = null
+    this.eq3?.dispose()
+    this.panner?.dispose()
+    this.reverbSend?.dispose()
+    this.synth = null; this.eq3 = null; this.panner = null; this.reverbSend = null
   }
 }

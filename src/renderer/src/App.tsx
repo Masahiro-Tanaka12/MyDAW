@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { MoodId, RealMoodId, SongBlueprint, SavedSong, ProgressionOption, DrumOption } from './theory/types'
+import type { MoodId, RealMoodId, SongBlueprint, SavedSong, ProgressionOption, DrumOption, SmartFxOption } from './theory/types'
 import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
 import { SongRepository } from './repository/SongRepository'
 
 type Status      = 'idle' | 'loading' | 'error' | 'playing' | 'done'
-type Screen      = 'home' | 'chord' | 'drum' | 'stepup' | 'mysongs'
+type Screen      = 'home' | 'chord' | 'drum' | 'smartfx' | 'stepup' | 'mysongs'
 type PlayContext = 'compose' | 'library'
 
 const MOODS: { emoji: string; label: string; id: MoodId }[] = [
@@ -157,6 +157,32 @@ const CSS = `
   .drum-card-btn:nth-child(2) { animation-delay: 0.12s; }
   .drum-card-btn:nth-child(3) { animation-delay: 0.19s; }
 
+  .smartfx-card-btn {
+    animation: fadeInUp 0.35s ease both;
+    background: rgba(251, 191, 36, 0.04);
+    border: 1.5px solid rgba(251, 191, 36, 0.18);
+    border-radius: 20px;
+    padding: 22px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.2s, border-color 0.2s, transform 0.18s, box-shadow 0.18s;
+    font-family: 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+  }
+  .smartfx-card-btn:hover {
+    background: rgba(251, 191, 36, 0.12);
+    border-color: rgba(251, 191, 36, 0.5);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .smartfx-card-btn:active { transform: translateY(0); transition-duration: 0.07s; }
+  .smartfx-card-btn:nth-child(1) { animation-delay: 0.05s; }
+  .smartfx-card-btn:nth-child(2) { animation-delay: 0.12s; }
+  .smartfx-card-btn:nth-child(3) { animation-delay: 0.19s; }
+
   .stepup-card {
     animation: fadeInUp 0.4s ease both;
     background: rgba(255, 255, 255, 0.03);
@@ -192,6 +218,8 @@ export default function App(): JSX.Element {
   const [chordOptions,    setChordOptions]    = useState<ProgressionOption[]>([])
   const [selectedChordId, setSelectedChordId] = useState<string | null>(null)
   const [drumOptions,     setDrumOptions]     = useState<DrumOption[]>([])
+  const [selectedDrumId,  setSelectedDrumId]  = useState<string | null>(null)
+  const [smartFxOptions,  setSmartFxOptions]  = useState<SmartFxOption[]>([])
 
   useEffect(() => {
     const offPlay = playbackEngine.on('play', () => setStatus('playing'))
@@ -233,11 +261,19 @@ export default function App(): JSX.Element {
   }
 
   const handleChooseDrum = (drumPatternId: string): void => {
-    if (!selectedMoodId || !selectedChordId) return
+    if (!selectedMoodId) return
+    setSelectedDrumId(drumPatternId)
+    setSmartFxOptions(composerEngine.getSmartFxOptions())
+    setScreen('smartfx')
+  }
+
+  const handleChooseSmartFx = (smartFxId: string): void => {
+    if (!selectedMoodId || !selectedChordId || !selectedDrumId) return
     const blueprint = composerEngine.compose({
       mood: selectedMoodId,
       chordProgressionId: selectedChordId,
-      drumPatternId,
+      drumPatternId:      selectedDrumId,
+      smartFxId,
     })
     startPlay(blueprint)
   }
@@ -485,6 +521,42 @@ export default function App(): JSX.Element {
               >
                 <span style={s.drumIcon}>🥁</span>
                 <span style={s.drumLabel}>{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // ── Smart FX 選択画面 ──────────────────────────────────────────
+  if (screen === 'smartfx') {
+    const MOOD_LABELS: Record<RealMoodId, string> = {
+      happy: '😊 元気', night: '🌙 夜', rain: '🌧 雨', spring: '🌸 春',
+    }
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={s.root}>
+          <div style={s.subHeader}>
+            <button className="back-btn" onClick={() => setScreen('drum')} style={s.backBtn}>
+              ← もどる
+            </button>
+            <h2 style={{ ...s.subTitle, color: '#fde68a' }}>
+              {selectedMoodId ? MOOD_LABELS[selectedMoodId] : ''}
+            </h2>
+            <p style={s.subSubtitle}>音の雰囲気を選んでください</p>
+          </div>
+
+          <div style={s.cardList}>
+            {smartFxOptions.map((opt) => (
+              <button
+                key={opt.id}
+                className="smartfx-card-btn"
+                onClick={() => handleChooseSmartFx(opt.id)}
+              >
+                <span style={s.smartFxIcon}>✨</span>
+                <span style={s.smartFxLabel}>{opt.label}</span>
               </button>
             ))}
           </div>
@@ -853,6 +925,13 @@ const s = {
   drumLabel: {
     fontSize: '1.05rem', fontWeight: 700,
     color: '#6ee7b7', letterSpacing: '0.03em',
+  },
+
+  // ── Smart FX 選択カード ──
+  smartFxIcon: { fontSize: '1.6rem', lineHeight: 1, flexShrink: 0 },
+  smartFxLabel: {
+    fontSize: '1.05rem', fontWeight: 700,
+    color: '#fde68a', letterSpacing: '0.03em',
   },
 
   // ── コード選択カード ──

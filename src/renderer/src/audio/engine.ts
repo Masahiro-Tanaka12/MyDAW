@@ -29,6 +29,13 @@ export class PlaybackEngine {
   private compressor   = new Tone.Compressor({ threshold: -18, ratio: 3, attack: 0.02, release: 0.2 })
   private limiter      = new Tone.Limiter(-1)
 
+  // 共有リバーブバス: 各プレイヤーの reverbSend → reverbBus → convolver → Destination
+  // load() 時に生成する（AudioContext 確立前のコンストラクタでは生成しない）
+  // Tone.Reverb は内部で Tone.Noise (AudioWorklet/blob: URL) を使うため Electron でクラッシュする。
+  // 代わりに手動生成したインパルス応答バッファを Tone.Convolver に渡す。
+  private reverbBus:    Tone.Gain      | null = null
+  private masterReverb: Tone.Convolver | null = null
+
   constructor() {
     this.masterVolume.chain(this.compressor, this.limiter, Tone.getDestination())
   }
@@ -73,17 +80,43 @@ export class PlaybackEngine {
   async load(): Promise<void> {
     if (!this.loadPromise) {
       this.loadPromise = (async () => {
+        // AudioContext 確立後に初めてリバーブを生成する
+        // Tone.Reverb は Tone.Noise (AudioWorklet/blob: URL) を内部使用するため Electron でクラッシュ。
+        // 代わりにネイティブ AudioContext で IR バッファを手動生成し Tone.Convolver に渡す。
+        if (!this.reverbBus || !this.masterReverb) {
+          const rawCtx = Tone.getContext().rawContext as AudioContext
+          const sr     = rawCtx.sampleRate
+          const decay  = 2.5   // 秒
+          const pre    = 0.01  // プリディレイ（秒）
+          const total  = Math.floor(sr * (decay + pre))
+          const preN   = Math.floor(sr * pre)
+          const ir     = rawCtx.createBuffer(2, total, sr)
+          for (let ch = 0; ch < 2; ch++) {
+            const d = ir.getChannelData(ch)
+            for (let i = 0; i < total; i++) {
+              d[i] = i < preN ? 0 : (Math.random() * 2 - 1) * Math.exp(-(i - preN) / (sr * decay * 0.5))
+            }
+          }
+          const irBuf = new Tone.ToneAudioBuffer()
+          irBuf.set(ir)
+
+          this.reverbBus         = new Tone.Gain(1)
+          this.masterReverb      = new Tone.Convolver()
+          this.masterReverb.buffer = irBuf
+          this.reverbBus.chain(this.masterReverb, this.limiter)
+        }
+
         const timeout = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('音源の読み込みがタイムアウトしました')), 15000)
         )
         await Promise.race([
           Promise.all([
-            this.chordPlayer.load(this.masterVolume),
-            this.bassPlayer.load(this.masterVolume),
+            this.chordPlayer.load(this.masterVolume, this.reverbBus!),
+            this.bassPlayer.load(this.masterVolume, this.reverbBus!),
           ]),
           timeout,
         ])
-        this.drumPlayer.load(this.masterVolume)
+        this.drumPlayer.load(this.masterVolume, this.reverbBus!)
         this.emit('load', {})
       })()
     }
@@ -142,7 +175,11 @@ export class PlaybackEngine {
     }, fadeOutStartMs)
 
     this.endTimer = setTimeout(() => {
-      this.cleanup()
+      this.clearTimers()
+      Tone.getTransport().loop = false
+      Tone.getTransport().stop()
+      Tone.getTransport().cancel()
+      this.masterVolume.volume.cancelScheduledValues(Tone.now())
       this.emit('end', {})
     }, (totalSec + 0.5) * 1000)
   }

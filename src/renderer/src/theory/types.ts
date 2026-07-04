@@ -16,6 +16,7 @@ export type UserIntent = {
   // Phase4以降に解放される選択肢（未指定時はComposerEngineが自動決定）
   chordProgressionId?: string
   drumPatternId?: string
+  smartFxId?: string
   tempo?: number
   instrumentPresetId?: string
 }
@@ -50,28 +51,32 @@ export type InstrumentMap = {
 // ─── トラック層（Phase2〜順次実装） ───────────────────────────────────────
 
 export type ChordTrack = {
-  kind:      'chord'
+  kind:        'chord'
   progression: ChordProgression
-  presetId:  string
+  presetId:    string
+  mixConfig?:  MixConfig
 }
 
 // Phase2以降 型のみ定義
 export type MelodyTrack = {
-  kind:     'melody'
-  pattern:  MelodyPattern
-  presetId: string
+  kind:       'melody'
+  pattern:    MelodyPattern
+  presetId:   string
+  mixConfig?: MixConfig
 }
 
 export type BassTrack = {
-  kind:     'bass'
-  notes:    NoteEvent[]
-  presetId: string
+  kind:       'bass'
+  notes:      NoteEvent[]
+  presetId:   string
+  mixConfig?: MixConfig
 }
 
 export type DrumTrack = {
-  kind:     'drum'
-  notes:    NoteEvent[]
-  presetId: string
+  kind:       'drum'
+  notes:      NoteEvent[]
+  presetId:   string
+  mixConfig?: MixConfig
 }
 
 export type TrackLayer = ChordTrack | MelodyTrack | BassTrack | DrumTrack
@@ -116,6 +121,12 @@ export type ProgressionOption = {
 
 // ドラム選択画面に渡すオプション
 export type DrumOption = {
+  id:    string
+  label: string
+}
+
+// Smart FX 選択画面に渡すオプション
+export type SmartFxOption = {
   id:    string
   label: string
 }

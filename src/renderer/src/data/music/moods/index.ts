@@ -11,9 +11,15 @@ export const moods: Record<RealMoodId, MoodRecord> = {
     key:   'C',
     scale: 'major',
     progressionCandidates: [
-      { id: 'prog_happy_pop',    weight: 45, label: '王道の明るさ'      },
-      { id: 'prog_happy_circle', weight: 35, label: 'ノリのある明るさ'   },
-      { id: 'prog_happy_simple', weight: 20, label: 'すっきりした明るさ' },
+      { id: 'prog_happy_pop',    weight: 45, label: '王道の明るさ'            },
+      { id: 'prog_happy_circle', weight: 35, label: 'ノリのある明るさ'         },
+      { id: 'prog_happy_simple', weight: 20, label: 'すっきりした明るさ'       },
+      { id: 'royal_road',        weight: 10, label: '王道進行'                },
+      { id: 'circle_50s',        weight: 10, label: '循環進行（50年代進行）'   },
+      { id: 'canon',             weight:  8, label: 'カノン進行'               },
+      { id: 'komuro_general',    weight:  8, label: '小室進行（哀愁進行）'     },
+      { id: 'blues12',           weight:  6, label: 'ブルース進行'             },
+      { id: 'marusa',            weight:  8, label: '丸サ進行'                },
     ],
     bassPatternCandidates: [
       { id: 'bass_happy_whole', weight: 50 }, // 安定した全音符

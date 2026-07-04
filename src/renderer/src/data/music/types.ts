@@ -1,9 +1,29 @@
-import type { NoteEvent } from '../../theory/types'
+import type { NoteEvent, MixConfig } from '../../theory/types'
+import type { ChordQuality }         from '../../theory/chordTheory'
 
 // 重み付き候補参照
 export type WeightedRef = {
   id:     string
   weight: number  // 相対的な選ばれやすさ（合計が100である必要はない）
+}
+
+// 度数ベースのコード進行テンプレート
+export type ProgressionTemplate = {
+  id:               string
+  scale:            'major' | 'minor'
+  degrees:          number[]                             // ダイアトニック度数（1〜7）
+  qualityOverrides: Partial<Record<number, ChordQuality>> // [配列インデックス] → 品質例外
+  bars:             number
+  alias:            string  // 日本語ラベル
+}
+
+// ベースパターンの1イベント（度数ベース）
+export type BassEventTemplate = {
+  time:       string   // Tone.js 時刻文字列 ("0m", "0:2:0" など)
+  chordIndex: number   // コード進行配列のインデックス（0 始まり）
+  octave:     number   // 音域指定（例: 2 → 全ルートをオクターブ2で）
+  duration:   string   // "1m" | "2n" など
+  velocity:   number   // 0.0〜1.0
 }
 
 // コード進行候補（ラベルを持つ）
@@ -23,9 +43,8 @@ export type ProgressionRecord = {
 }
 
 export type BassPatternRecord = {
-  id:    string
-  // 現在: キー固定の絶対音程。今後コードルート相対音程へ移行予定
-  notes: NoteEvent[]
+  id:     string
+  events: BassEventTemplate[]  // 度数ベース。Generator が実キーで NoteEvent に解決する
 }
 
 export type DrumPatternRecord = {
@@ -39,6 +58,15 @@ export type InstrumentPresetRecord = {
   bassPresetId:   string
   drumPresetId:   string
   melodyPresetId: string
+}
+
+export type SmartFxPresetRecord = {
+  id:     string
+  label:  string
+  chord:  MixConfig
+  bass:   MixConfig
+  drum:   MixConfig
+  melody: MixConfig
 }
 
 export type MoodRecord = {
