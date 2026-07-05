@@ -1,15 +1,26 @@
 import { useEffect, useState } from 'react'
-import type { RealMoodId, SongBlueprint, SavedSong, DrumOption, SmartFxOption } from './theory/types'
+import type { RealMoodId, SongBlueprint, SavedSong, DrumOption, SmartFxOption, NoteEvent } from './theory/types'
 import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
 import { SongRepository } from './repository/SongRepository'
 import { moods }          from './data/music/moods'
 import { BPM_RANGE }      from './data/music/theory/tempoRange'
+import { drumPatterns }   from './data/music/drum-patterns'
+import { BEAT_STRENGTH } from './data/music/theory/beatStrength'
 
 type Status      = 'idle' | 'loading' | 'error' | 'playing' | 'done'
 type Screen      = 'home' | 'drum' | 'smartfx' | 'stepup' | 'mysongs'
-type PlayContext = 'compose' | 'library'
+type PlayContext = 'compose' | 'library' | 'drumPreview'
 type ChordTab   = 'template' | 'step'
+
+// ── ドラムグリッド型 ────────────────────────────────────────────────────
+type GridVel = 0 | 0.4 | 0.65 | 0.9
+type DrumGrid = {
+  kick:  [GridVel, GridVel, GridVel, GridVel]
+  snare: [GridVel, GridVel, GridVel, GridVel]
+  hihat: [GridVel, GridVel, GridVel, GridVel]
+}
+type CustomDrumNotes = { kick: NoteEvent[]; snare: NoteEvent[]; hihat: NoteEvent[] }
 
 const MOOD_CHIPS: { emoji: string; label: string; id: RealMoodId }[] = [
   { emoji: '😊', label: '元気',  id: 'happy'  },
@@ -45,6 +56,91 @@ const STEPUP_CARDS = [
 function formatDate(iso: string): string {
   const d = new Date(iso)
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+// ── ドラムグリッドユーティリティ ────────────────────────────────────────
+
+const GRID_VEL_CYCLE: GridVel[] = [0, 0.4, 0.65, 0.9]
+
+function cycleVel(v: GridVel): GridVel {
+  return GRID_VEL_CYCLE[(GRID_VEL_CYCLE.indexOf(v) + 1) % GRID_VEL_CYCLE.length]
+}
+
+// DrumPatternRecord（1小節分の kick/snare/hihat）をグリッドに変換
+// シンコペーション（sub ≠ 0）は同じ拍の最大ベロシティとして丸める
+function patternToGrid(p: { kick: NoteEvent[]; snare: NoteEvent[]; hihat: NoteEvent[] }): DrumGrid {
+  const toGV = (vel: number): GridVel =>
+    vel >= 0.8 ? 0.9 : vel >= 0.55 ? 0.65 : vel > 0 ? 0.4 : 0
+  const rowOf = (notes: NoteEvent[]): [GridVel, GridVel, GridVel, GridVel] => {
+    const row: [GridVel, GridVel, GridVel, GridVel] = [0, 0, 0, 0]
+    for (const ev of notes) {
+      const [barStr, beatStr] = ev.time.split(':')
+      if (parseInt(barStr, 10) !== 0) continue
+      const b = parseInt(beatStr, 10)
+      if (b >= 0 && b <= 3) { const v = toGV(ev.velocity); if (v > row[b]) row[b] = v }
+    }
+    return row
+  }
+  return { kick: rowOf(p.kick), snare: rowOf(p.snare), hihat: rowOf(p.hihat) }
+}
+
+// グリッド1行 → NoteEvent[]（1小節分）
+function rowToNotes(row: [GridVel, GridVel, GridVel, GridVel], voice: 'kick' | 'snare' | 'hihat'): NoteEvent[] {
+  const note = voice === 'kick' ? 'C1' : voice === 'snare' ? 'C2' : 'A6'
+  const dur  = voice === 'hihat' ? '32n' : '8n'
+  return row.flatMap((vel, beat) =>
+    vel === 0 ? [] : [{ time: `0:${beat}:0`, note, duration: dur, velocity: vel }]
+  )
+}
+
+// 1小節分のノートをbars小節分タイリング
+function tileNotes(notes: NoteEvent[], bars: number): NoteEvent[] {
+  const result: NoteEvent[] = []
+  for (let r = 0; r < bars; r++) {
+    for (const ev of notes) {
+      const [bar, ...rest] = ev.time.split(':')
+      if (parseInt(bar, 10) + r >= bars) continue
+      result.push({ ...ev, time: [parseInt(bar, 10) + r, ...rest].join(':') })
+    }
+  }
+  return result
+}
+
+// パターンが4拍グリッドで完全再現可能かどうかを判定
+// sub ≠ 0（8分・16分単位のヒット）や同拍複数ヒットはグリッドで再現不可
+function isGridCompatible(p: { bars: number; kick: NoteEvent[]; snare: NoteEvent[]; hihat: NoteEvent[] }): boolean {
+  if (p.bars !== 1) return false
+  const check = (notes: NoteEvent[]): boolean => {
+    const seen = new Set<number>()
+    for (const ev of notes) {
+      const parts = ev.time.split(':')
+      if (parseInt(parts[0], 10) !== 0) return false
+      if (parseInt(parts[2], 10) !== 0) return false
+      const beat = parseInt(parts[1], 10)
+      if (seen.has(beat)) return false
+      seen.add(beat)
+    }
+    return true
+  }
+  return check(p.kick) && check(p.snare) && check(p.hihat)
+}
+
+// グリッドの配置から一言ヒントテキストを生成（BEAT_STRENGTH テーブル参照）
+function drumHint(grid: DrumGrid): string {
+  const snBeats = grid.snare.map((v, b) => v > 0 ? b : -1).filter(b => b >= 0) as (0 | 1 | 2 | 3)[]
+  const hhCount = grid.hihat.filter(v => v > 0).length
+  const kCount  = grid.kick.filter(v => v > 0).length
+  if (snBeats.some(b => BEAT_STRENGTH[b] === 'weak_backbeat'))
+    return '2・4拍のスネアがポップスらしいノリ（バックビート）を生んでいます'
+  if (snBeats.some(b => BEAT_STRENGTH[b] === 'medium'))
+    return '3拍目のスネアがゆったりとしたハーフタイムの重さを出しています'
+  if (hhCount >= 6)
+    return 'ハイハットを細かく刻むと、前に進む推進力が生まれます'
+  if (hhCount <= 1)
+    return 'ハイハットを少なくすると、静かで余白のある空気感になります'
+  if (kCount >= 4)
+    return '4つ打ちキックが安定したグルーヴを生んでいます'
+  return 'このリズムで試してみましょう'
 }
 
 const CSS = `
@@ -243,9 +339,11 @@ export default function App(): JSX.Element {
   const [customProg,      setCustomProg]      = useState<{ scale: 'major' | 'minor'; degrees: number[] } | null>(null)
 
   // ドラム・音質選択状態
-  const [drumOptions,    setDrumOptions]    = useState<DrumOption[]>([])
-  const [selectedDrumId, setSelectedDrumId] = useState<string | null>(null)
-  const [smartFxOptions, setSmartFxOptions] = useState<SmartFxOption[]>([])
+  const [drumOptions,     setDrumOptions]     = useState<DrumOption[]>([])
+  const [selectedDrumId,  setSelectedDrumId]  = useState<string | null>(null)
+  const [drumGrid,        setDrumGrid]         = useState<DrumGrid | null>(null)
+  const [customDrumNotes, setCustomDrumNotes]  = useState<CustomDrumNotes | null>(null)
+  const [smartFxOptions,  setSmartFxOptions]  = useState<SmartFxOption[]>([])
 
   // ── 派生値 ─────────────────────────────────────────────────────────────
   // ステップモードで有効なスケール（ムードフィルタ優先）
@@ -283,6 +381,14 @@ export default function App(): JSX.Element {
       window.removeEventListener('unhandledrejection', handleRejection)
     }
   }, [])
+
+  // ドラム試聴（1小節ループ）が終わったらドラム画面に戻る
+  useEffect(() => {
+    if (status === 'done' && playContext === 'drumPreview') {
+      setStatus('idle')
+      setScreen('drum')
+    }
+  }, [status, playContext])
 
   // ── Handlers ───────────────────────────────────────────────────────────
 
@@ -325,14 +431,60 @@ export default function App(): JSX.Element {
 
   const handleChooseDrum = (drumPatternId: string): void => {
     setSelectedDrumId(drumPatternId)
+    setCustomDrumNotes(null)
+    if (isGridCompatible(drumPatterns[drumPatternId])) {
+      setDrumGrid(patternToGrid(drumPatterns[drumPatternId]))
+      // drumGrid がセットされるとドラム画面内でグリッドUIに切り替わる
+    } else {
+      // グリッドで完全再現できないプリセット → グリッドをバイパスしてSmartFXへ
+      setDrumGrid(null)
+      setSmartFxOptions(composerEngine.getSmartFxOptions())
+      setScreen('smartfx')
+    }
+  }
+
+  // ドラムグリッドを確定してSmartFX画面へ
+  const handleConfirmDrum = (): void => {
+    if (!drumGrid) return
+    setCustomDrumNotes({
+      kick:  rowToNotes(drumGrid.kick,  'kick'),
+      snare: rowToNotes(drumGrid.snare, 'snare'),
+      hihat: rowToNotes(drumGrid.hihat, 'hihat'),
+    })
     setSmartFxOptions(composerEngine.getSmartFxOptions())
     setScreen('smartfx')
+  }
+
+  // グリッドの現在状態を1小節ループで試聴（ドラムトラックのみ）
+  const handlePreviewDrum = (): void => {
+    if (!drumGrid) return
+    const previewBp: SongBlueprint = {
+      seed: 0, moodId: backingMoodId, bpm,
+      key: 'C', scale: 'major',
+      chordProgression: { id: 'preview', chords: [], bars: 1 },
+      melodyPattern: { id: 'none', notes: [] },
+      instrumentMap: { melody: '', chord: '', bass: '', drum: '' },
+      tracks: [{
+        kind: 'drum',
+        kickNotes:  rowToNotes(drumGrid.kick,  'kick'),
+        snareNotes: rowToNotes(drumGrid.snare, 'snare'),
+        hihatNotes: rowToNotes(drumGrid.hihat, 'hihat'),
+        presetId: '',
+      }],
+    }
+    setPlayContext('drumPreview')
+    setLastBlueprint(previewBp)
+    setStatus('loading')
+    playbackEngine.play(previewBp).catch(() => {
+      playbackEngine.resetLoad()
+      setStatus('error')
+    })
   }
 
   const handleChooseSmartFx = (smartFxId: string): void => {
     if (!selectedDrumId) return
     if (!selectedChordId && !customProg) return
-    const blueprint = composerEngine.compose({
+    let blueprint = composerEngine.compose({
       mood:               backingMoodId,
       chordProgressionId: selectedChordId ?? undefined,
       customProgression:  customProg ?? undefined,
@@ -340,6 +492,19 @@ export default function App(): JSX.Element {
       smartFxId,
       bpm,
     })
+    // グリッドで微調整したノートがあればドラムトラックを差し替え
+    if (customDrumNotes) {
+      const bars = blueprint.chordProgression.bars
+      blueprint = {
+        ...blueprint,
+        tracks: blueprint.tracks.map(t => t.kind !== 'drum' ? t : {
+          ...t,
+          kickNotes:  tileNotes(customDrumNotes.kick,  bars),
+          snareNotes: tileNotes(customDrumNotes.snare, bars),
+          hihatNotes: tileNotes(customDrumNotes.hihat, bars),
+        }),
+      }
+    }
     startPlay(blueprint)
   }
 
@@ -367,6 +532,8 @@ export default function App(): JSX.Element {
     setCustomProg(null)
     setStepItems([])
     setStepScale(null)
+    setDrumGrid(null)
+    setCustomDrumNotes(null)
   }
 
   const handleSave = (): void => {
@@ -461,7 +628,7 @@ export default function App(): JSX.Element {
   }
 
   // ── 再生中 ─────────────────────────────────────────────────────────────
-  if (status === 'playing') {
+  if (status === 'playing' && playContext !== 'drumPreview') {
     return (
       <>
         <style>{CSS}</style>
@@ -491,7 +658,7 @@ export default function App(): JSX.Element {
   }
 
   // ── 完成（作曲） ───────────────────────────────────────────────────────
-  if (status === 'done') {
+  if (status === 'done' && playContext !== 'drumPreview') {
     return (
       <>
         <style>{CSS}</style>
@@ -517,48 +684,184 @@ export default function App(): JSX.Element {
 
   // ── ドラム選択画面 ─────────────────────────────────────────────────────
   if (screen === 'drum') {
+    const selectedOpt = drumOptions.find(o => o.id === selectedDrumId)
+
     return (
       <>
         <style>{CSS}</style>
         <div style={s.root}>
           <div style={s.subHeader}>
-            <button className="back-btn" onClick={() => setScreen('home')} style={s.backBtn}>
-              ← もどる
+            <button className="back-btn"
+              onClick={() => drumGrid ? setDrumGrid(null) : setScreen('home')}
+              style={s.backBtn}
+            >
+              ← {drumGrid ? 'プリセットに戻る' : 'もどる'}
             </button>
             <h2 style={{ ...s.subTitle, color: '#6ee7b7' }}>
               {moodFilter ? MOOD_LABELS[moodFilter] : ''}
             </h2>
-            <p style={s.subSubtitle}>リズムの雰囲気を選んでください</p>
+            <p style={s.subSubtitle}>
+              {drumGrid ? '細かく調整できます（クリックで強弱切り替え）' : 'リズムの雰囲気を選んでください'}
+            </p>
           </div>
-          <div style={s.cardList}>
-            {drumOptions.map((opt) => (
-              <button key={opt.id} className="drum-card-btn" onClick={() => handleChooseDrum(opt.id)}>
-                <span style={s.drumIcon}>🥁</span>
-                <span style={s.drumCardBody}>
-                  <span style={s.drumLabel}>{opt.label}</span>
-                  <span style={s.beatRow}>
-                    {opt.beatPattern.map((vel, bi) => {
-                      const hit = vel !== null
-                      const size = hit ? 10 + Math.round((vel ?? 0) * 6) : 10
-                      return (
-                        <span key={bi} style={{
-                          ...s.beatDot,
-                          width:   size,
-                          height:  size,
-                          background: hit
-                            ? `rgba(110,231,183,${0.35 + (vel ?? 0) * 0.65})`
-                            : 'transparent',
-                          border: hit
-                            ? `1.5px solid rgba(110,231,183,${0.4 + (vel ?? 0) * 0.6})`
-                            : '1.5px solid rgba(110,231,183,0.18)',
-                        }} />
-                      )
-                    })}
+
+          {/* ── プリセット一覧 ── */}
+          {!drumGrid && (
+            <div style={s.cardList}>
+              {drumOptions.map((opt) => (
+                <button key={opt.id} className="drum-card-btn" onClick={() => handleChooseDrum(opt.id)}>
+                  <span style={s.drumIcon}>🥁</span>
+                  <span style={s.drumCardBody}>
+                    <span style={s.drumLabel}>{opt.label}</span>
+                    <span style={s.beatRow}>
+                      {opt.beatPattern.map((vel, bi) => {
+                        const hit = vel !== null
+                        const size = hit ? 10 + Math.round((vel ?? 0) * 6) : 10
+                        return (
+                          <span key={bi} style={{
+                            ...s.beatDot,
+                            width:   size,
+                            height:  size,
+                            background: hit
+                              ? `rgba(110,231,183,${0.35 + (vel ?? 0) * 0.65})`
+                              : 'transparent',
+                            border: hit
+                              ? `1.5px solid rgba(110,231,183,${0.4 + (vel ?? 0) * 0.6})`
+                              : '1.5px solid rgba(110,231,183,0.18)',
+                          }} />
+                        )
+                      })}
+                    </span>
                   </span>
-                </span>
-              </button>
-            ))}
-          </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── グリッドUI ── */}
+          {drumGrid && (
+            <div style={s.gridWrapper}>
+              {selectedOpt && (
+                <p style={s.gridPresetName}>🥁 {selectedOpt.label}</p>
+              )}
+
+              {/* グリッド本体: 拍ヘッダー + 3声 */}
+              <div style={s.gridTable}>
+                {/* 拍ヘッダー行 */}
+                <div style={s.gridRow}>
+                  <span style={s.gridRowLabel} />
+                  {([1, 2, 3, 4] as const).map(n => (
+                    <span key={n} style={{
+                      ...s.gridBeatHeader,
+                      color: n === 1 || n === 3 ? '#a5b4fc' : '#6b7280',
+                    }}>
+                      {n}拍
+                    </span>
+                  ))}
+                </div>
+
+                {/* キック行 */}
+                <div style={s.gridRow}>
+                  <span style={s.gridRowLabel}>キック</span>
+                  {drumGrid.kick.map((vel, bi) => (
+                    <button
+                      key={bi}
+                      style={{
+                        ...s.gridCell,
+                        background: vel === 0
+                          ? 'rgba(52,211,153,0.05)'
+                          : `rgba(52,211,153,${0.2 + vel * 0.75})`,
+                        border: vel === 0
+                          ? '1.5px solid rgba(52,211,153,0.18)'
+                          : `1.5px solid rgba(52,211,153,${0.4 + vel * 0.55})`,
+                        boxShadow: vel > 0.7 ? '0 0 8px rgba(52,211,153,0.3)' : 'none',
+                      }}
+                      onClick={() => setDrumGrid(g => g && { ...g, kick: g.kick.map((v, i) => i === bi ? cycleVel(v) : v) as DrumGrid['kick'] })}
+                    />
+                  ))}
+                </div>
+
+                {/* スネア行 */}
+                <div style={s.gridRow}>
+                  <span style={s.gridRowLabel}>スネア</span>
+                  {drumGrid.snare.map((vel, bi) => (
+                    <button
+                      key={bi}
+                      style={{
+                        ...s.gridCell,
+                        background: vel === 0
+                          ? 'rgba(196,181,253,0.05)'
+                          : `rgba(196,181,253,${0.2 + vel * 0.75})`,
+                        border: vel === 0
+                          ? '1.5px solid rgba(196,181,253,0.18)'
+                          : `1.5px solid rgba(196,181,253,${0.4 + vel * 0.55})`,
+                        boxShadow: vel > 0.7 ? '0 0 8px rgba(196,181,253,0.3)' : 'none',
+                      }}
+                      onClick={() => setDrumGrid(g => g && { ...g, snare: g.snare.map((v, i) => i === bi ? cycleVel(v) : v) as DrumGrid['snare'] })}
+                    />
+                  ))}
+                </div>
+
+                {/* ハイハット行 */}
+                <div style={s.gridRow}>
+                  <span style={s.gridRowLabel}>HH</span>
+                  {drumGrid.hihat.map((vel, bi) => (
+                    <button
+                      key={bi}
+                      style={{
+                        ...s.gridCell,
+                        background: vel === 0
+                          ? 'rgba(251,191,36,0.05)'
+                          : `rgba(251,191,36,${0.2 + vel * 0.75})`,
+                        border: vel === 0
+                          ? '1.5px solid rgba(251,191,36,0.18)'
+                          : `1.5px solid rgba(251,191,36,${0.4 + vel * 0.55})`,
+                        boxShadow: vel > 0.7 ? '0 0 8px rgba(251,191,36,0.3)' : 'none',
+                      }}
+                      onClick={() => setDrumGrid(g => g && { ...g, hihat: g.hihat.map((v, i) => i === bi ? cycleVel(v) : v) as DrumGrid['hihat'] })}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* 凡例 */}
+              <div style={s.gridLegend}>
+                {([0, 0.4, 0.65, 0.9] as GridVel[]).map((v, i) => (
+                  <span key={i} style={s.legendItem}>
+                    <span style={{
+                      ...s.legendDot,
+                      background: v === 0 ? 'transparent' : `rgba(52,211,153,${0.25 + v * 0.7})`,
+                      border: v === 0 ? '1.5px solid rgba(52,211,153,0.22)' : '1.5px solid rgba(52,211,153,0.6)',
+                    }} />
+                    <span style={s.legendLabel}>
+                      {v === 0 ? 'オフ' : v === 0.4 ? '弱' : v === 0.65 ? '中' : '強'}
+                    </span>
+                  </span>
+                ))}
+              </div>
+
+              {/* ヒントテキスト */}
+              <p style={s.gridHint}>💡 {drumHint(drumGrid)}</p>
+
+              {/* アクションボタン */}
+              <div style={s.gridActions}>
+                {status === 'playing' && playContext === 'drumPreview' ? (
+                  <button className="stop-btn" onClick={handleStop} style={{ ...s.gridPreviewBtn, borderColor: '#dc2626', color: '#fca5a5', background: 'rgba(220,38,38,0.12)' }}>
+                    ⏹ 停止
+                  </button>
+                ) : (
+                  <button className="back-btn" onClick={handlePreviewDrum} style={s.gridPreviewBtn}
+                    disabled={status === 'loading'}
+                  >
+                    {status === 'loading' && playContext === 'drumPreview' ? '...' : '▶ 試聴'}
+                  </button>
+                )}
+                <button className="mysongs-btn" onClick={handleConfirmDrum} style={s.gridConfirmBtn}>
+                  このリズムにする →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </>
     )
@@ -1241,6 +1544,67 @@ const s = {
     borderRadius: '50%',
     flexShrink: 0,
     transition: 'background 0.15s',
+  },
+
+  // ── ドラムグリッド ──
+  gridWrapper: {
+    display: 'flex', flexDirection: 'column' as const, alignItems: 'center',
+    gap: '14px', width: '100%', maxWidth: '440px',
+  },
+  gridPresetName: {
+    fontSize: '0.9rem', fontWeight: 700, color: '#6ee7b7',
+    letterSpacing: '0.03em', alignSelf: 'flex-start' as const,
+  },
+  gridTable: { display: 'flex', flexDirection: 'column' as const, gap: '10px', width: '100%' },
+  gridRow: { display: 'flex', alignItems: 'center', gap: '10px' },
+  gridRowLabel: {
+    width: '52px', flexShrink: 0, fontSize: '0.78rem', fontWeight: 700,
+    color: '#6b7280', letterSpacing: '0.03em', textAlign: 'right' as const,
+  },
+  gridBeatHeader: {
+    flex: 1, textAlign: 'center' as const,
+    fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em',
+  },
+  gridCell: {
+    flex: 1, aspectRatio: '1', borderRadius: '10px',
+    cursor: 'pointer', transition: 'background 0.15s, box-shadow 0.15s, border-color 0.15s',
+    minWidth: '44px', maxWidth: '72px',
+  },
+  gridLegend: {
+    display: 'flex', alignItems: 'center', gap: '14px',
+    alignSelf: 'flex-start' as const, paddingLeft: '62px',
+  },
+  legendItem: { display: 'flex', alignItems: 'center', gap: '5px' },
+  legendDot: {
+    display: 'inline-block', width: '12px', height: '12px',
+    borderRadius: '50%', flexShrink: 0,
+  },
+  legendLabel: { fontSize: '0.72rem', color: '#6b7280', fontWeight: 600 },
+  gridHint: {
+    fontSize: '0.82rem', color: '#9ca3af', lineHeight: 1.6,
+    letterSpacing: '0.02em', textAlign: 'center' as const,
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '12px', padding: '10px 14px', width: '100%',
+  },
+  gridActions: { display: 'flex', gap: '10px', width: '100%' },
+  gridPreviewBtn: {
+    flex: 1, padding: '12px 8px',
+    fontSize: '0.92rem', fontWeight: 700,
+    background: 'rgba(255,255,255,0.04)', border: '1.5px solid rgba(255,255,255,0.18)',
+    borderRadius: '14px', color: '#9ca3af',
+    cursor: 'pointer', transition: 'background 0.2s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+    letterSpacing: '0.03em',
+  },
+  gridConfirmBtn: {
+    flex: 2, padding: '12px 8px',
+    fontSize: '0.95rem', fontWeight: 700,
+    background: 'rgba(52,211,153,0.12)', border: '1.5px solid rgba(52,211,153,0.45)',
+    borderRadius: '14px', color: '#6ee7b7',
+    cursor: 'pointer', transition: 'background 0.2s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+    letterSpacing: '0.03em',
   },
 
   // ── Smart FX 選択 ──

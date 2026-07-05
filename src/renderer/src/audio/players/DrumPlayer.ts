@@ -77,7 +77,13 @@ export class DrumPlayer {
     }
 
     for (const event of track.snareNotes) {
-      Tone.getTransport().schedule((time) => { snare!.start(time) }, event.time)
+      const vel = event.velocity
+      Tone.getTransport().schedule((time) => {
+        // Tone.Player は start() にベロシティ引数を取れないため、
+        // volume.value を dB に変換してから start する（-12 dB がベース音量）
+        snare!.volume.value = -12 + Tone.gainToDb(vel)
+        snare!.start(time)
+      }, event.time)
     }
 
     for (const event of track.hihatNotes) {
