@@ -20,6 +20,7 @@ export type UserIntent = {
   bpm?: number              // 未指定時は mood のデフォルト BPM を使用
   instrumentPresetId?: string
   customProgression?: { scale: 'major' | 'minor'; degrees: number[] }
+  melodyNotes?: RelativeNote[]  // 鼻歌から採譜したメロディ（未指定時はメロディなし）
 }
 
 // コード進行
@@ -58,10 +59,10 @@ export type ChordTrack = {
   mixConfig?:  MixConfig
 }
 
-// Phase2以降 型のみ定義
 export type MelodyTrack = {
   kind:       'melody'
-  pattern:    MelodyPattern
+  pattern:    MelodyPattern   // RelativeNote[] 原本（度数表現）
+  notes:      NoteEvent[]     // Generator が解決した実音イベント列
   presetId:   string
   mixConfig?: MixConfig
 }

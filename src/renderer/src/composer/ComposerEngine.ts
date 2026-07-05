@@ -133,7 +133,7 @@ export class ComposerEngine {
         }
       : progressionTemplates[finalSelection.progressionId]
 
-    return { ...generate(mood, finalSelection, template, intent.bpm), seed, moodId }
+    return { ...generate(mood, finalSelection, template, intent.bpm, intent.melodyNotes), seed, moodId }
   }
 }
 

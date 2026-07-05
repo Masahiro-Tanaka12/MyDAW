@@ -1,8 +1,9 @@
 import * as Tone from 'tone'
 import type { PlaybackEventMap, SongBlueprint } from '../theory/types'
-import { ChordPlayer } from './players/ChordPlayer'
-import { BassPlayer }  from './players/BassPlayer'
-import { DrumPlayer }  from './players/DrumPlayer'
+import { ChordPlayer }  from './players/ChordPlayer'
+import { BassPlayer }   from './players/BassPlayer'
+import { DrumPlayer }   from './players/DrumPlayer'
+import { MelodyPlayer } from './players/MelodyPlayer'
 
 type Handler<K extends keyof PlaybackEventMap> = (
   payload: PlaybackEventMap[K]
@@ -14,9 +15,10 @@ const TARGET_LOOP_SEC = 45  // 目標尺（秒）。小節境界でぴったり�
 
 export class PlaybackEngine {
   private handlers    = new Map<string, Handler<keyof PlaybackEventMap>[]>()
-  private chordPlayer = new ChordPlayer()
-  private bassPlayer  = new BassPlayer()
-  private drumPlayer  = new DrumPlayer()
+  private chordPlayer  = new ChordPlayer()
+  private bassPlayer   = new BassPlayer()
+  private drumPlayer   = new DrumPlayer()
+  private melodyPlayer = new MelodyPlayer()
   private endTimer:  ReturnType<typeof setTimeout> | null = null
   private fadeTimer: ReturnType<typeof setTimeout> | null = null
   private stopTimer: ReturnType<typeof setTimeout> | null = null
@@ -117,6 +119,7 @@ export class PlaybackEngine {
           timeout,
         ])
         this.drumPlayer.load(this.masterVolume, this.reverbBus!)
+        this.melodyPlayer.load(this.masterVolume, this.reverbBus!)
         this.emit('load', {})
       })()
     }
@@ -153,6 +156,8 @@ export class PlaybackEngine {
         this.bassPlayer.schedule(track)
       } else if (track.kind === 'drum') {
         this.drumPlayer.schedule(track)
+      } else if (track.kind === 'melody') {
+        this.melodyPlayer.schedule(track)
       }
     }
 

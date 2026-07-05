@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { RealMoodId, SongBlueprint, SavedSong, DrumOption, SmartFxOption, NoteEvent } from './theory/types'
+import { useEffect, useRef, useState } from 'react'
+import type { RealMoodId, SongBlueprint, SavedSong, DrumOption, SmartFxOption, NoteEvent, RelativeNote } from './theory/types'
+import { melodyRecorder } from './audio/MelodyRecorder'
 import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
 import { SongRepository } from './repository/SongRepository'
@@ -9,8 +10,8 @@ import { drumPatterns }   from './data/music/drum-patterns'
 import { BEAT_STRENGTH } from './data/music/theory/beatStrength'
 
 type Status      = 'idle' | 'loading' | 'error' | 'playing' | 'done'
-type Screen      = 'home' | 'drum' | 'smartfx' | 'stepup' | 'mysongs'
-type PlayContext = 'compose' | 'library' | 'drumPreview'
+type Screen      = 'home' | 'drum' | 'smartfx' | 'melody' | 'stepup' | 'mysongs'
+type PlayContext = 'compose' | 'library' | 'drumPreview' | 'melodyPreview'
 type ChordTab   = 'template' | 'step'
 
 // ── ドラムグリッド型 ────────────────────────────────────────────────────
@@ -270,6 +271,21 @@ const CSS = `
   .smartfx-card-btn:nth-child(2) { animation-delay: 0.12s; }
   .smartfx-card-btn:nth-child(3) { animation-delay: 0.19s; }
 
+  .melody-rec-btn {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    border: 2.5px solid rgba(239,68,68,0.7);
+    background: rgba(239,68,68,0.12);
+    color: #fca5a5;
+    font-size: 2rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.18s;
+    font-family: 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+  }
+  .melody-rec-btn:hover  { background: rgba(239,68,68,0.28); }
+  .melody-rec-btn.active { background: rgba(239,68,68,0.5); border-color: #ef4444; animation: breathe 0.9s ease-in-out infinite; }
+
   .stepup-card {
     animation: fadeInUp 0.4s ease both;
     background: rgba(255, 255, 255, 0.03);
@@ -339,11 +355,20 @@ export default function App(): JSX.Element {
   const [customProg,      setCustomProg]      = useState<{ scale: 'major' | 'minor'; degrees: number[] } | null>(null)
 
   // ドラム・音質選択状態
-  const [drumOptions,     setDrumOptions]     = useState<DrumOption[]>([])
-  const [selectedDrumId,  setSelectedDrumId]  = useState<string | null>(null)
-  const [drumGrid,        setDrumGrid]         = useState<DrumGrid | null>(null)
-  const [customDrumNotes, setCustomDrumNotes]  = useState<CustomDrumNotes | null>(null)
-  const [smartFxOptions,  setSmartFxOptions]  = useState<SmartFxOption[]>([])
+  const [drumOptions,        setDrumOptions]        = useState<DrumOption[]>([])
+  const [selectedDrumId,     setSelectedDrumId]     = useState<string | null>(null)
+  const [drumGrid,           setDrumGrid]            = useState<DrumGrid | null>(null)
+  const [customDrumNotes,    setCustomDrumNotes]     = useState<CustomDrumNotes | null>(null)
+  const [drumPreviewLoading, setDrumPreviewLoading]  = useState(false)
+  const [smartFxOptions,     setSmartFxOptions]      = useState<SmartFxOption[]>([])
+  const [selectedSmartFxId,  setSelectedSmartFxId]   = useState<string | null>(null)
+
+  // メロディ録音状態
+  type RecordStatus = 'idle' | 'recording' | 'done'
+  const [recordStatus,  setRecordStatus]  = useState<RecordStatus>('idle')
+  const [melodyNotes,   setMelodyNotes]   = useState<RelativeNote[] | null>(null)
+  // melody preview blueprint（試聴用）
+  const melodyPreviewBpRef = useRef<SongBlueprint | null>(null)
 
   // ── 派生値 ─────────────────────────────────────────────────────────────
   // ステップモードで有効なスケール（ムードフィルタ優先）
@@ -387,6 +412,10 @@ export default function App(): JSX.Element {
     if (status === 'done' && playContext === 'drumPreview') {
       setStatus('idle')
       setScreen('drum')
+    }
+    if (status === 'done' && playContext === 'melodyPreview') {
+      setStatus('idle')
+      setScreen('melody')
     }
   }, [status, playContext])
 
@@ -455,9 +484,22 @@ export default function App(): JSX.Element {
     setScreen('smartfx')
   }
 
+  // グリッドセルをクリックしたとき: 試聴中なら停止してからグリッドを更新
+  const handleGridCellClick = (voice: 'kick' | 'snare' | 'hihat', bi: number): void => {
+    if (status === 'playing' && playContext === 'drumPreview') {
+      playbackEngine.stop()
+    }
+    setDrumGrid(g => {
+      if (!g) return g
+      if (voice === 'kick')  return { ...g, kick:  g.kick.map((v, i)  => i === bi ? cycleVel(v) : v) as DrumGrid['kick']  }
+      if (voice === 'snare') return { ...g, snare: g.snare.map((v, i) => i === bi ? cycleVel(v) : v) as DrumGrid['snare'] }
+      return { ...g, hihat: g.hihat.map((v, i) => i === bi ? cycleVel(v) : v) as DrumGrid['hihat'] }
+    })
+  }
+
   // グリッドの現在状態を1小節ループで試聴（ドラムトラックのみ）
   const handlePreviewDrum = (): void => {
-    if (!drumGrid) return
+    if (!drumGrid || drumPreviewLoading) return
     const previewBp: SongBlueprint = {
       seed: 0, moodId: backingMoodId, bpm,
       key: 'C', scale: 'major',
@@ -474,25 +516,35 @@ export default function App(): JSX.Element {
     }
     setPlayContext('drumPreview')
     setLastBlueprint(previewBp)
-    setStatus('loading')
-    playbackEngine.play(previewBp).catch(() => {
-      playbackEngine.resetLoad()
-      setStatus('error')
-    })
+    setDrumPreviewLoading(true)
+    playbackEngine.play(previewBp)
+      .catch(() => {
+        playbackEngine.resetLoad()
+        setStatus('error')
+      })
+      .finally(() => setDrumPreviewLoading(false))
   }
 
   const handleChooseSmartFx = (smartFxId: string): void => {
     if (!selectedDrumId) return
     if (!selectedChordId && !customProg) return
+    setSelectedSmartFxId(smartFxId)
+    // SmartFX 選択後はメロディ録音画面へ遷移
+    setMelodyNotes(null)
+    setRecordStatus('idle')
+    setScreen('melody')
+  }
+
+  const buildBlueprint = (smartFxId: string): SongBlueprint => {
     let blueprint = composerEngine.compose({
       mood:               backingMoodId,
       chordProgressionId: selectedChordId ?? undefined,
       customProgression:  customProg ?? undefined,
-      drumPatternId:      selectedDrumId,
+      drumPatternId:      selectedDrumId!,
       smartFxId,
       bpm,
+      melodyNotes:        melodyNotes ?? undefined,
     })
-    // グリッドで微調整したノートがあればドラムトラックを差し替え
     if (customDrumNotes) {
       const bars = blueprint.chordProgression.bars
       blueprint = {
@@ -505,7 +557,12 @@ export default function App(): JSX.Element {
         }),
       }
     }
-    startPlay(blueprint)
+    return blueprint
+  }
+
+  const handleMelodyDone = (): void => {
+    if (!selectedSmartFxId) return
+    startPlay(buildBlueprint(selectedSmartFxId))
   }
 
   const handleOmakase = (): void => {
@@ -534,6 +591,9 @@ export default function App(): JSX.Element {
     setStepScale(null)
     setDrumGrid(null)
     setCustomDrumNotes(null)
+    setMelodyNotes(null)
+    setRecordStatus('idle')
+    setSelectedSmartFxId(null)
   }
 
   const handleSave = (): void => {
@@ -628,7 +688,7 @@ export default function App(): JSX.Element {
   }
 
   // ── 再生中 ─────────────────────────────────────────────────────────────
-  if (status === 'playing' && playContext !== 'drumPreview') {
+  if (status === 'playing' && playContext !== 'drumPreview' && playContext !== 'melodyPreview') {
     return (
       <>
         <style>{CSS}</style>
@@ -658,7 +718,7 @@ export default function App(): JSX.Element {
   }
 
   // ── 完成（作曲） ───────────────────────────────────────────────────────
-  if (status === 'done' && playContext !== 'drumPreview') {
+  if (status === 'done' && playContext !== 'drumPreview' && playContext !== 'melodyPreview') {
     return (
       <>
         <style>{CSS}</style>
@@ -776,7 +836,7 @@ export default function App(): JSX.Element {
                           : `1.5px solid rgba(52,211,153,${0.4 + vel * 0.55})`,
                         boxShadow: vel > 0.7 ? '0 0 8px rgba(52,211,153,0.3)' : 'none',
                       }}
-                      onClick={() => setDrumGrid(g => g && { ...g, kick: g.kick.map((v, i) => i === bi ? cycleVel(v) : v) as DrumGrid['kick'] })}
+                      onClick={() => handleGridCellClick('kick', bi)}
                     />
                   ))}
                 </div>
@@ -797,7 +857,7 @@ export default function App(): JSX.Element {
                           : `1.5px solid rgba(196,181,253,${0.4 + vel * 0.55})`,
                         boxShadow: vel > 0.7 ? '0 0 8px rgba(196,181,253,0.3)' : 'none',
                       }}
-                      onClick={() => setDrumGrid(g => g && { ...g, snare: g.snare.map((v, i) => i === bi ? cycleVel(v) : v) as DrumGrid['snare'] })}
+                      onClick={() => handleGridCellClick('snare', bi)}
                     />
                   ))}
                 </div>
@@ -818,7 +878,7 @@ export default function App(): JSX.Element {
                           : `1.5px solid rgba(251,191,36,${0.4 + vel * 0.55})`,
                         boxShadow: vel > 0.7 ? '0 0 8px rgba(251,191,36,0.3)' : 'none',
                       }}
-                      onClick={() => setDrumGrid(g => g && { ...g, hihat: g.hihat.map((v, i) => i === bi ? cycleVel(v) : v) as DrumGrid['hihat'] })}
+                      onClick={() => handleGridCellClick('hihat', bi)}
                     />
                   ))}
                 </div>
@@ -851,9 +911,9 @@ export default function App(): JSX.Element {
                   </button>
                 ) : (
                   <button className="back-btn" onClick={handlePreviewDrum} style={s.gridPreviewBtn}
-                    disabled={status === 'loading'}
+                    disabled={drumPreviewLoading}
                   >
-                    {status === 'loading' && playContext === 'drumPreview' ? '...' : '▶ 試聴'}
+                    {drumPreviewLoading ? '...' : '▶ 試聴'}
                   </button>
                 )}
                 <button className="mysongs-btn" onClick={handleConfirmDrum} style={s.gridConfirmBtn}>
@@ -890,6 +950,132 @@ export default function App(): JSX.Element {
               </button>
             ))}
           </div>
+        </div>
+      </>
+    )
+  }
+
+  // ── メロディ録音画面 ───────────────────────────────────────────────────
+  if (screen === 'melody') {
+    const handleStartRec = async (): Promise<void> => {
+      try {
+        await melodyRecorder.start()
+        setRecordStatus('recording')
+        // 伴奏を同時再生（SmartFX 選択済み前提）
+        if (selectedSmartFxId) {
+          const bp = composerEngine.compose({
+            mood: backingMoodId, chordProgressionId: selectedChordId ?? undefined,
+            customProgression: customProg ?? undefined, drumPatternId: selectedDrumId!,
+            smartFxId: selectedSmartFxId, bpm,
+          })
+          setPlayContext('melodyPreview')
+          playbackEngine.play(bp).catch(() => { /* 試聴エラーは無視 */ })
+        }
+      } catch (err) {
+        const name = err instanceof Error ? err.name : 'Unknown'
+        const msg  = err instanceof Error ? err.message : String(err)
+        alert(`録音エラー\nname: ${name}\nmessage: ${msg}`)
+      }
+    }
+
+    const handleStopRec = async (): Promise<void> => {
+      try {
+        playbackEngine.stop()
+        const { pcm, sampleRate } = await melodyRecorder.stop()
+        const key   = moods[backingMoodId].key
+        const scale = moods[backingMoodId].scale
+        const notes = melodyRecorder.process(pcm, sampleRate, bpm, key, scale)
+        setMelodyNotes(notes.length > 0 ? notes : null)
+      } catch (err) {
+        const name = err instanceof Error ? err.name    : 'Unknown'
+        const msg  = err instanceof Error ? err.message : String(err)
+        alert(`録音停止エラー\nname: ${name}\nmessage: ${msg}`)
+        setMelodyNotes(null)
+      } finally {
+        setRecordStatus('done')
+      }
+    }
+
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={s.root}>
+          <div style={s.subHeader}>
+            <button className="back-btn" onClick={() => setScreen('smartfx')} style={s.backBtn}>
+              ← もどる
+            </button>
+            <h2 style={{ ...s.subTitle, color: '#f9a8d4' }}>🎤 メロディ</h2>
+            <p style={s.subSubtitle}>
+              {recordStatus === 'recording'
+                ? '録音中...伴奏に合わせて鼻歌を歌ってください'
+                : recordStatus === 'done' && melodyNotes
+                  ? `${melodyNotes.length}個の音符を検出しました`
+                  : recordStatus === 'done' && !melodyNotes
+                    ? '音符を検出できませんでした。やり直してみてください'
+                    : 'ボタンを押して鼻歌を録音しましょう（任意）'}
+            </p>
+          </div>
+
+          {/* 録音ボタン */}
+          <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '16px', marginTop: '12px' }}>
+            {recordStatus !== 'recording' ? (
+              <button
+                className="melody-rec-btn"
+                onClick={() => void handleStartRec()}
+              >
+                ●
+              </button>
+            ) : (
+              <button
+                className="melody-rec-btn active"
+                onClick={() => void handleStopRec()}
+              >
+                ■
+              </button>
+            )}
+            <p style={{ color: '#6b7280', fontSize: '0.82rem' }}>
+              {recordStatus === 'recording' ? '■ を押して停止' : '● を押して録音開始'}
+            </p>
+          </div>
+
+          {/* 検出結果バッジ */}
+          {recordStatus === 'done' && melodyNotes && (
+            <div style={{
+              marginTop: '8px', padding: '10px 20px',
+              background: 'rgba(249,168,212,0.08)',
+              border: '1px solid rgba(249,168,212,0.25)',
+              borderRadius: '12px', color: '#f9a8d4', fontSize: '0.88rem',
+            }}>
+              🎵 {melodyNotes.length}音符 検出
+            </div>
+          )}
+
+          {/* やり直し */}
+          {recordStatus === 'done' && (
+            <button
+              className="back-btn"
+              style={{ ...s.backBtn, marginTop: '4px' }}
+              onClick={() => { setMelodyNotes(null); setRecordStatus('idle') }}
+            >
+              やり直す
+            </button>
+          )}
+
+          <div style={{ height: '16px' }} />
+
+          {/* スキップ / 決定 */}
+          <button
+            className="mysongs-btn"
+            style={{
+              ...s.backBtn,
+              background: 'rgba(196,181,253,0.08)',
+              border: '1.5px solid rgba(196,181,253,0.35)',
+              color: '#c4b5fd', padding: '14px 28px', fontSize: '1rem', fontWeight: 700,
+            }}
+            onClick={handleMelodyDone}
+          >
+            {melodyNotes && melodyNotes.length > 0 ? 'このメロディで完成させる →' : 'メロディなしで完成させる →'}
+          </button>
         </div>
       </>
     )

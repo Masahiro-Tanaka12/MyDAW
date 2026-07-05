@@ -18,7 +18,7 @@
     ▼
 [音質層]    Smart FXの感覚ラベルで選ぶ
     ▼
-[メロディ層] 候補から選ぶ（未実装）
+[メロディ層] 鼻歌を録音し自動採譜（未実装）
     ▼
 [音声エンジンレイヤー]  Tone.js
     │ 自動ミックス（EQ/リバーブ/コンプ/パン）適用
@@ -26,7 +26,7 @@
 [音出力]  スピーカー
 ```
 
-> **現状**: コード・ドラム・音質の3層はUI化済み。メロディ層のみ未実装（`melodyPattern.notes` は空）。ホーム画面はムードチップ＋テンポスライダー＋コード選択（テンプレート/1コードずつのタブ）そのもの。コード進行は度数（ダイアトニックコード理論）ベースで内部管理し、キーに依存せず使い回せる（詳細は後述の「度数ベース理論エンジン」参照）。
+> **現状**: コード・ドラム・音質の3層はUI化済み。メロディ層のみ未実装（`melodyPattern.notes` は空。方針としては鼻歌を録音し既存のピッチ検出ライブラリで自動採譜する方式で実装予定。ピッチ検出アルゴリズム自体の自前実装はしない）。ホーム画面はムードチップ＋テンポスライダー＋コード選択（テンプレート/1コードずつのタブ）そのもの。コード進行は度数（ダイアトニックコード理論）ベースで内部管理し、キーに依存せず使い回せる（詳細は後述の「度数ベース理論エンジン」参照）。ドラムはプリセット選択後、1拍1マスのグリッドで微調整できる（詳細は後述の「DrumGrid」参照）。
 
 ---
 
@@ -80,6 +80,18 @@
 ### なぜ「1コードずつ選ぶ」と「テンプレートから選ぶ」の2モードか
 - 初期構想（brain.txt）にあった「最初のコードを選ぶと次に繋がる候補が理論的に提示される」という体験と、「王道進行のような完成された型をそのまま使いたい」という体験は、どちらも需要があり両立できる
 - 内部的には同じ度数エンジンを共有する：テンプレートは度数列の固定パターン、1コードずつ選ぶモードは度数間の遷移重み表（`data/music/theory/transitions.ts`、機能和声の慣習に基づく目安値）から都度候補を提示する
+
+### なぜドラムに「グリッドでの微調整」を追加したか
+- プリセット選択だけだと「用意された型から選ぶ」で完結し、ユーザーが持っている「ここは強く」「ここは抜きたい」という細かい意図を反映できない
+- ただしフルの16分ステップシーケンサーは直感モードには重すぎる（Phase3 DAWモード相当）ため、「1拍=1マス」という粗い解像度に絞ったグリッドを、プリセットを選んだ後の微調整としてのみ提供する
+- グリッドの解像度を超えるパターン（シンコペーション、8分/16分単位のヒットを含むもの）は、微調整の対象から外し「プリセットのまま」使う。無理に丸めて反映すると、選択画面で見た/プレビューした内容と実際に鳴る曲がズレるため（詳細は後述の「DrumGrid」参照）
+
+### なぜメロディ層は鼻歌採譜方式にし、ピッチ検出は自前実装しないか
+- 候補から選ぶだけでは、ユーザーが頭の中で思っているメロディを反映できず「ありもの」にしかならないという課題があり、鼻歌を録音してメロディに自動採譜する方式を採用する
+- ただし、ピッチ検出アルゴリズム（自己相関/YIN等）をゼロから自前実装するのは実装コストが大きく、車輪の再発明になる。既存のnpmライブラリ（例: pitchy、pitchfinder等）を採用し、実装コストを下げる
+- 「AIには依存しない」という開発理念があるため、ライブラリ選定時はニューラルネットベースのピッチ検出（CREPE系等）は避け、自己相関・YIN等の古典的なDSPアルゴリズムを使うものを選ぶ
+- 検出したピッチはコード/キーのスケールに沿った音へスナップし、タイミングもリズムグリッドにスナップすることで、歌が多少不正確でも音楽的に破綻しない結果にする
+- 歌うのが苦手・恥ずかしいユーザー向けに、候補から選ぶ方式を併用する可能性も残す（要検討）
 
 ---
 
@@ -143,7 +155,7 @@ MyDAW/
     ↓
 コード選択（テンプレートタブ or 1コードずつタブ）で chordProgressionId or customProgression が決まる
     ↓
-ドラム選択（getAllDrumOptions） → Smart FX選択（getSmartFxOptions）
+ドラム選択（getAllDrumOptions） → （グリッド互換パターンなら）4拍グリッドで微調整 → Smart FX選択（getSmartFxOptions）
     ↓
 composerEngine.compose({ mood, chordProgressionId | customProgression, drumPatternId, smartFxId, bpm }) が呼ばれる
     ├─ Selector.select() がベース・楽器プリセットを重み付き抽選（ユーザー選択があれば上書き）
@@ -482,3 +494,62 @@ type DrumPatternRecord = {
 7グルーヴ（力強いビート／おだやかなビート／控えめなビート／ノリのあるビート／極めて静かなビート／ゆったりしたビート／静かなビート）を実データとして持つ。各グルーヴは1小節分のキック・スネア・ハイハットをまとめて定義し、`Generator.ts`がベースと同じタイリングロジック（`shiftBarTime`流用）でコード進行の小節数まで繰り返す。`DrumPlayer.ts`は`track.kickNotes`/`snareNotes`/`hihatNotes`をそのままスケジュールするだけで、スネア・ハイハットのパターンをハードコードしない。
 
 ドラム選択カードには、キックの拍0〜3のヒット有無・ベロシティから生成した簡易リズムプレビュー（`DrumOption.beatPattern`）を表示する。
+
+`DrumPlayer.schedule()`は`triggerAttackRelease`にvelocityを直接渡せるkick/hihatと異なり、スネアは`Tone.Player`（`start()`にvelocity引数がない）を使うため、発音直前に`snare.volume.value = -12 + Tone.gainToDb(event.velocity)`でdB換算して反映する。
+
+---
+
+## DrumGrid — ドラム4拍グリッドによる微調整
+
+**ファイル**: `src/renderer/src/App.tsx`（`DrumGrid`型・`patternToGrid`/`rowToNotes`/`isGridCompatible`/`drumHint`）、`src/renderer/src/data/music/theory/beatStrength.ts`
+
+### 責務
+
+プリセット選択だけでは反映できないユーザーの細かい意図（「ここは強く」等）を、直感モードの範囲内で補助的に受け止める。フルの16分ステップシーケンサー（Phase3 DAWモード相当）は実装せず、「1拍=1マス」×3声（キック/スネア/ハイハット）という粗い解像度に絞る。
+
+```typescript
+type GridVel  = 0 | 0.4 | 0.65 | 0.9   // オフ/弱/中/強
+type DrumGrid = {
+  kick:  [GridVel, GridVel, GridVel, GridVel]
+  snare: [GridVel, GridVel, GridVel, GridVel]
+  hihat: [GridVel, GridVel, GridVel, GridVel]
+}
+```
+
+- プリセットを選ぶと`patternToGrid()`がその内容をグリッドの初期状態として展開する
+- セルはクリックで`GRID_VEL_CYCLE = [0, 0.4, 0.65, 0.9]`を順に巡回する
+- グリッドの状態はいつでも1小節ループで試聴できる（`handlePreviewDrum`）
+- 確定時（`handleConfirmDrum`）は`rowToNotes()`でグリッドを`NoteEvent[]`に変換し、`customDrumNotes`として最終トラックを上書きする
+
+### グリッド非対応パターンのバイパス（`isGridCompatible`）
+
+グリッドは1拍1イベントしか表現できないため、`sub !== 0`（8分・16分単位のヒット）を含むパターンや、同じ拍に複数のヒットを持つパターンは、グリッドに通すと情報が失われる（例：シンコペーションが表拍に矯正される、8分ハイハットが4分に丸められる）。
+
+これを避けるため、`handleChooseDrum()`は選んだプリセットが`isGridCompatible()`を満たすかどうかで分岐する。
+
+```typescript
+function isGridCompatible(p: DrumPatternRecord): boolean {
+  // bars !== 1、または kick/snare/hihat のいずれかに
+  // sub !== 0 のイベントや同拍複数ヒットがあれば false
+}
+```
+
+- `true`（現状: `drum_4beat_soft` / `drum_4beat_weak` / `drum_halfbeat` / `drum_halfbeat_soft`）→ グリッド画面へ進み、微調整可能
+- `false`（現状: `drum_4beat_strong` / `drum_4beat_medium` / `drum_4beat_groove`）→ グリッドをバイパスし、プリセットのデータをそのままSmart FX画面以降に渡す（`customDrumNotes`は`null`のまま、`composerEngine.compose()`がカタログの`drumPatternId`を直接解決する）
+
+判定はパターンIDのハードコードではなく、パターンが実際に持つデータ（`sub`フィールドの有無・拍の重複）から動的に行う。将来ドラムパターンを追加・変更しても、この分類は自動的に追従する。
+
+### 拍節理論とヒントテキスト（`BEAT_STRENGTH` / `drumHint`）
+
+`theory/beatStrength.ts`に、4/4拍子における拍の機能的な強さ（メトリック・ヒエラルキー理論）を構造化データとして持つ。
+
+```typescript
+export const BEAT_STRENGTH: Record<0 | 1 | 2 | 3, 'strong' | 'medium' | 'weak_backbeat'> = {
+  0: 'strong',        // 1拍目：最強拍
+  1: 'weak_backbeat', // 2拍目：弱拍。スネアを置くとバックビートになる
+  2: 'medium',        // 3拍目：準強拍
+  3: 'weak_backbeat', // 4拍目：弱拍。スネアを置くとバックビートになる
+}
+```
+
+`drumHint(grid)`（App.tsx）はこのテーブルを参照し、現在のグリッド配置に応じた一言ヒントを動的に生成する（例：2・4拍にスネア→「ポップスらしいノリ（バックビート）」）。ハードコードした拍インデックス比較ではなく、必ずこのテーブルを介して判定することで、理論データとヒント文言の二重管理を避けている。

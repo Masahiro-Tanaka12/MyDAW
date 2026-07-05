@@ -23,6 +23,15 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+// 非同期のunhandled rejectionでレンダラーが白画面になるのを防ぐ
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[unhandledrejection]', event.reason)
+  event.preventDefault()
+})
+window.addEventListener('error', (event) => {
+  console.error('[window error]', event.error)
+})
+
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found')
 

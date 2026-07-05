@@ -34,7 +34,7 @@ export const DIATONIC_QUALITY_7TH: Record<'major' | 'minor', Record<number, Chor
 }
 
 // 音名配列（0=C … 11=B）。Tone.js が受け付けるエンハーモニック表記に準拠
-const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const
+export const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const
 
 // 音名 → インデックス（エンハーモニック別名も解決）
 const ENHARMONIC: Record<string, string> = {
@@ -108,6 +108,51 @@ export function resolveChordNotes(
 /** ルート名 + 品質 → コードシンボル文字列（例: "A","minor" → "Am"） */
 export function chordToSymbol(root: string, quality: ChordQuality): string {
   return root + QUALITY_SUFFIX[quality]
+}
+
+/**
+ * MIDIノート番号 → スケール度数（0-based step index + 7*オクターブ差）
+ * C4 (MIDI 60) を基準として、キーのルートからの相対位置に変換する。
+ * 例: key="C", scale="major", midi=64(E4) → 2（3度目のスケール音）
+ */
+export function midiToScaleDegree(
+  midi: number,
+  key: string,
+  scale: 'major' | 'minor',
+): number {
+  const rootMidi = noteIndex(key) + 60  // キーのルートをMIDI 60(C4)基準で算出
+  const offsets  = SCALE_OFFSETS[scale]
+  const delta    = midi - rootMidi
+  const oct      = Math.floor(delta / 12)
+  const pc       = ((delta % 12) + 12) % 12
+
+  let bestStep = 0
+  let bestDist = Infinity
+  for (let step = 0; step < 7; step++) {
+    const dist = Math.min(Math.abs(offsets[step] - pc), 12 - Math.abs(offsets[step] - pc))
+    if (dist < bestDist) { bestDist = dist; bestStep = step }
+  }
+  return bestStep + 7 * oct
+}
+
+/**
+ * スケール度数 → Tone.js ノート文字列
+ * 例: degree=2, key="C", scale="major", referenceOctave=4 → "E4"
+ */
+export function scaleDegreeToNote(
+  degree: number,
+  key: string,
+  scale: 'major' | 'minor',
+  referenceOctave = 4,
+): string {
+  const rootPc  = noteIndex(key)
+  const offsets = SCALE_OFFSETS[scale]
+  const oct     = Math.floor(degree / 7)
+  const step    = ((degree % 7) + 7) % 7
+  const absIdx  = rootPc + offsets[step]
+  const notePc  = absIdx % 12
+  const noteOct = referenceOctave + oct + Math.floor(absIdx / 12)
+  return NOTE_NAMES[notePc] + noteOct
 }
 
 /** コードシンボル文字列 → { root, quality }（例: "F#m7" → { root:"F#", quality:"minor7" }） */
