@@ -1,11 +1,10 @@
-import type { SongBlueprint, NoteEvent } from '../theory/types'
-import type { MoodRecord }               from '../data/music/types'
-import type { SelectionSet }             from './Selector'
-import { progressionTemplates }          from '../data/music/progression-templates'
-import { bassPatterns }                  from '../data/music/bass-patterns'
-import { drumPatterns }                  from '../data/music/drum-patterns'
-import { instrumentPresets }             from '../data/music/instrument-presets'
-import { smartFxPresets }                from '../data/music/smart-fx'
+import type { SongBlueprint, NoteEvent }        from '../theory/types'
+import type { MoodRecord, ProgressionTemplate }  from '../data/music/types'
+import type { SelectionSet }                     from './Selector'
+import { bassPatterns }                          from '../data/music/bass-patterns'
+import { drumPatterns }                          from '../data/music/drum-patterns'
+import { instrumentPresets }                     from '../data/music/instrument-presets'
+import { smartFxPresets }                        from '../data/music/smart-fx'
 import {
   resolveChordRoot,
   chordToSymbol,
@@ -21,14 +20,33 @@ function shiftBarTime(time: string, barOffset: number): string {
 }
 
 // 「生成」の責務を担う純粋関数
-// SelectionSet（選ばれた ID 群）+ MoodRecord → SongBlueprint（seed/moodId は ComposerEngine が付与）
+// template はカタログ由来でも customProgression 由来でも同じ経路で処理する
 // 副作用なし・同じ入力なら常に同じ出力（テスト容易）
-export function generate(mood: MoodRecord, selection: SelectionSet, bpmOverride?: number): Omit<SongBlueprint, 'seed' | 'moodId'> {
-  const template = progressionTemplates[selection.progressionId]
-  const bass     = bassPatterns[selection.bassPatternId]
-  const drum     = drumPatterns[selection.drumPatternId]
-  const preset   = instrumentPresets[selection.instrumentPresetId]
-  const fx       = smartFxPresets[selection.smartFxId] ?? smartFxPresets['preset_neutral']
+export function generate(
+  mood:        MoodRecord,
+  selection:   SelectionSet,
+  template:    ProgressionTemplate,
+  bpmOverride?: number,
+): Omit<SongBlueprint, 'seed' | 'moodId'> {
+  const bass   = bassPatterns[selection.bassPatternId]
+  const drum   = drumPatterns[selection.drumPatternId]
+  const preset = instrumentPresets[selection.instrumentPresetId]
+  const fx     = smartFxPresets[selection.smartFxId] ?? smartFxPresets['preset_neutral']
+
+  function tileDrumVoice(events: NoteEvent[]): NoteEvent[] {
+    const drumBars    = drum.bars
+    const repeatCount = Math.ceil(template.bars / drumBars)
+    const result: NoteEvent[] = []
+    for (let r = 0; r < repeatCount; r++) {
+      const barOffset = r * drumBars
+      for (const ev of events) {
+        const evBar = parseInt(ev.time.split(':')[0], 10)
+        if (evBar + barOffset >= template.bars) continue
+        result.push({ ...ev, time: shiftBarTime(ev.time, barOffset) })
+      }
+    }
+    return result
+  }
 
   // テンプレートの度数 → 実キーのコードシンボル文字列に解決
   // scale は mood ではなく template 基準（借用和音テンプレートで正しく解決するため）
@@ -86,10 +104,12 @@ export function generate(mood: MoodRecord, selection: SelectionSet, bpmOverride?
         mixConfig: fx.bass,
       },
       {
-        kind:      'drum',
-        presetId:  preset.drumPresetId,
-        notes:     drum.notes,
-        mixConfig: fx.drum,
+        kind:        'drum',
+        presetId:    preset.drumPresetId,
+        kickNotes:   tileDrumVoice(drum.kick),
+        snareNotes:  tileDrumVoice(drum.snare),
+        hihatNotes:  tileDrumVoice(drum.hihat),
+        mixConfig:   fx.drum,
       },
     ],
   }

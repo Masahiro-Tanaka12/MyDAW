@@ -152,7 +152,7 @@ export class PlaybackEngine {
       } else if (track.kind === 'bass') {
         this.bassPlayer.schedule(track)
       } else if (track.kind === 'drum') {
-        this.drumPlayer.schedule(track, bars)
+        this.drumPlayer.schedule(track)
       }
     }
 

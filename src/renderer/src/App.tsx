@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react'
-import type { MoodId, RealMoodId, SongBlueprint, SavedSong, ProgressionOption, DrumOption, SmartFxOption } from './theory/types'
+import type { RealMoodId, SongBlueprint, SavedSong, DrumOption, SmartFxOption } from './theory/types'
 import { composerEngine } from './composer/ComposerEngine'
 import { playbackEngine } from './audio/engine'
 import { SongRepository } from './repository/SongRepository'
+import { moods }          from './data/music/moods'
+import { BPM_RANGE }      from './data/music/theory/tempoRange'
 
 type Status      = 'idle' | 'loading' | 'error' | 'playing' | 'done'
-type Screen      = 'home' | 'chord' | 'drum' | 'smartfx' | 'stepup' | 'mysongs'
+type Screen      = 'home' | 'drum' | 'smartfx' | 'stepup' | 'mysongs'
 type PlayContext = 'compose' | 'library'
+type ChordTab   = 'template' | 'step'
 
-const MOODS: { emoji: string; label: string; id: MoodId }[] = [
-  { emoji: '😊', label: '元気',    id: 'happy'  },
-  { emoji: '🌙', label: '夜',      id: 'night'  },
-  { emoji: '🌧', label: '雨',      id: 'rain'   },
-  { emoji: '🌸', label: '春',      id: 'spring' },
+const MOOD_CHIPS: { emoji: string; label: string; id: RealMoodId }[] = [
+  { emoji: '😊', label: '元気',  id: 'happy'  },
+  { emoji: '🌙', label: '夜',    id: 'night'  },
+  { emoji: '🌧', label: '雨',    id: 'rain'   },
+  { emoji: '🌸', label: '春',    id: 'spring' },
 ]
 
 const MOOD_MAP: Record<RealMoodId, { emoji: string; label: string }> = {
@@ -22,7 +25,10 @@ const MOOD_MAP: Record<RealMoodId, { emoji: string; label: string }> = {
   spring: { emoji: '🌸', label: '春'   },
 }
 
-// アルバムアートプレースホルダー色（Moodごと）
+const MOOD_LABELS: Record<RealMoodId, string> = {
+  happy: '😊 元気', night: '🌙 夜', rain: '🌧 雨', spring: '🌸 春',
+}
+
 const MOOD_COLORS: Record<RealMoodId, string> = {
   happy:  'linear-gradient(135deg, #d97706, #fbbf24)',
   night:  'linear-gradient(135deg, #5b21b6, #8b5cf6)',
@@ -31,21 +37,9 @@ const MOOD_COLORS: Record<RealMoodId, string> = {
 }
 
 const STEPUP_CARDS = [
-  {
-    emoji: '🎵',
-    title: '曲の流れを選ぶ',
-    desc: '最初から最後まで、どんな雰囲気で進むかを自分で決められます',
-  },
-  {
-    emoji: '🕐',
-    title: '曲の速さを選ぶ',
-    desc: 'ゆったりした曲にするか、テンポよく弾む曲にするかを調整できます',
-  },
-  {
-    emoji: '🎸',
-    title: '楽器を選ぶ',
-    desc: 'ピアノ・ギター・シンセなど、音の雰囲気をがらりと変えられます',
-  },
+  { emoji: '🎵', title: '曲の流れを選ぶ',  desc: '最初から最後まで、どんな雰囲気で進むかを自分で決められます' },
+  { emoji: '🕐', title: '曲の速さを選ぶ',  desc: 'ゆったりした曲にするか、テンポよく弾む曲にするかを調整できます' },
+  { emoji: '🎸', title: '楽器を選ぶ',      desc: 'ピアノ・ギター・シンセなど、音の雰囲気をがらりと変えられます' },
 ]
 
 function formatDate(iso: string): string {
@@ -127,9 +121,6 @@ const CSS = `
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   }
   .chord-card-btn:active { transform: translateY(0); transition-duration: 0.07s; }
-  .chord-card-btn:nth-child(1) { animation-delay: 0.05s; }
-  .chord-card-btn:nth-child(2) { animation-delay: 0.12s; }
-  .chord-card-btn:nth-child(3) { animation-delay: 0.19s; }
 
   .drum-card-btn {
     animation: fadeInUp 0.35s ease both;
@@ -203,30 +194,83 @@ const CSS = `
   .edit-input:focus { border-color: rgba(255,255,255,0.45) !important; background: rgba(255,255,255,0.09) !important; }
 
   .breathing { animation: breathe 1.5s ease-in-out infinite; }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 4px;
+    background: rgba(196, 181, 253, 0.25);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #c4b5fd;
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(196, 181, 253, 0.6);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #c4b5fd;
+    cursor: pointer;
+    border: none;
+  }
 `
 
 export default function App(): JSX.Element {
-  const [status,          setStatus]          = useState<Status>('idle')
-  const [screen,          setScreen]          = useState<Screen>('home')
-  const [playContext,     setPlayContext]     = useState<PlayContext>('compose')
-  const [lastBlueprint,   setLastBlueprint]   = useState<SongBlueprint | null>(null)
-  const [isSaved,         setIsSaved]         = useState(false)
-  const [songs,           setSongs]           = useState<SavedSong[]>([])
-  const [editingId,       setEditingId]       = useState<string | null>(null)
-  const [editingTitle,    setEditingTitle]    = useState('')
-  const [selectedMoodId,  setSelectedMoodId]  = useState<RealMoodId | null>(null)
-  const [chordOptions,    setChordOptions]    = useState<ProgressionOption[]>([])
-  const [selectedChordId, setSelectedChordId] = useState<string | null>(null)
-  const [drumOptions,     setDrumOptions]     = useState<DrumOption[]>([])
-  const [selectedDrumId,  setSelectedDrumId]  = useState<string | null>(null)
-  const [smartFxOptions,  setSmartFxOptions]  = useState<SmartFxOption[]>([])
+  // ── State ──────────────────────────────────────────────────────────────
+  const [status,        setStatus]        = useState<Status>('idle')
+  const [screen,        setScreen]        = useState<Screen>('home')
+  const [playContext,   setPlayContext]   = useState<PlayContext>('compose')
+  const [lastBlueprint, setLastBlueprint] = useState<SongBlueprint | null>(null)
+  const [isSaved,       setIsSaved]       = useState(false)
+  const [songs,         setSongs]         = useState<SavedSong[]>([])
+  const [editingId,     setEditingId]     = useState<string | null>(null)
+  const [editingTitle,  setEditingTitle]  = useState('')
 
+  // コード選択状態
+  const [moodFilter,      setMoodFilter]      = useState<RealMoodId | null>(null)
+  const [bpm,             setBpm]             = useState<number>(BPM_RANGE.default)
+  const [chordTab,        setChordTab]        = useState<ChordTab>('template')
+  const [stepItems,       setStepItems]       = useState<{ degree: number; label: string }[]>([])
+  const [stepScale,       setStepScale]       = useState<'major' | 'minor' | null>(null)
+  const [selectedChordId, setSelectedChordId] = useState<string | null>(null)
+  const [customProg,      setCustomProg]      = useState<{ scale: 'major' | 'minor'; degrees: number[] } | null>(null)
+
+  // ドラム・音質選択状態
+  const [drumOptions,    setDrumOptions]    = useState<DrumOption[]>([])
+  const [selectedDrumId, setSelectedDrumId] = useState<string | null>(null)
+  const [smartFxOptions, setSmartFxOptions] = useState<SmartFxOption[]>([])
+
+  // ── 派生値 ─────────────────────────────────────────────────────────────
+  // ステップモードで有効なスケール（ムードフィルタ優先）
+  const effectiveScale: 'major' | 'minor' | null =
+    moodFilter ? moods[moodFilter].scale : stepScale
+
+  // 生成時のバッキングムード（ムードフィルタ → スケール由来 → デフォルト happy）
+  const backingMoodId: RealMoodId =
+    moodFilter ?? (effectiveScale === 'minor' ? 'night' : 'happy')
+
+  // テンプレートタブの一覧（フィルタ適用済み）
+  const templateOptions = composerEngine.getAllProgressionOptions(moodFilter ?? undefined)
+
+  // ステップタブの次候補（現在の末尾度数から）
+  const currentDegree = stepItems.length > 0 ? stepItems[stepItems.length - 1].degree : 1
+  const nextDegreeOptions = effectiveScale
+    ? composerEngine.getNextDegreeOptions(effectiveScale, currentDegree).slice(0, 4)
+    : []
+
+  // ── Effects ────────────────────────────────────────────────────────────
   useEffect(() => {
     const offPlay = playbackEngine.on('play', () => setStatus('playing'))
     const offEnd  = playbackEngine.on('end',  () => setStatus('done'))
     const offStop = playbackEngine.on('stop', () => setStatus('idle'))
 
-    // Tone.js が onerror の外側でグローバルに reject を発火するケースをキャッチ
     const handleRejection = (e: PromiseRejectionEvent): void => {
       e.preventDefault()
       playbackEngine.resetLoad()
@@ -240,42 +284,67 @@ export default function App(): JSX.Element {
     }
   }, [])
 
-  // ── ホーム: 曲を作る ──────────────────────────────────────────────
-  const handleSelect = (mood: MoodId): void => {
-    if (mood === 'random') {
-      // おまかせ: ムード・コード全部ランダムで即再生
-      startPlay(composerEngine.compose({ mood: 'random' }))
-      return
+  // ── Handlers ───────────────────────────────────────────────────────────
+
+  const handleMoodFilter = (mood: RealMoodId | null): void => {
+    setMoodFilter(mood)
+    setBpm(mood ? moods[mood].bpm : BPM_RANGE.default)
+    // ステップ状態リセット（スケールが変わる可能性があるため）
+    setStepScale(null)
+    if (mood) {
+      // ムード確定時はスケールが決まるのでステップ初期コード自動セット
+      setStepItems(chordTab === 'step' ? [{ degree: 1, label: 'I' }] : [])
+    } else {
+      setStepItems([])
     }
-    // 通常ムード: コード選択画面へ
-    setSelectedMoodId(mood)
-    setChordOptions(composerEngine.getProgressionOptions(mood))
-    setScreen('chord')
+  }
+
+  const handleTabChange = (tab: ChordTab): void => {
+    setChordTab(tab)
+    // ステップタブに切り替えてスケールが確定していれば度数1を初期セット
+    if (tab === 'step' && stepItems.length === 0 && effectiveScale) {
+      setStepItems([{ degree: 1, label: 'I' }])
+    }
   }
 
   const handleChooseChord = (progressionId: string): void => {
-    if (!selectedMoodId) return
     setSelectedChordId(progressionId)
-    setDrumOptions(composerEngine.getDrumOptions(selectedMoodId))
+    setCustomProg(null)
+    setDrumOptions(composerEngine.getAllDrumOptions(moodFilter ?? undefined))
+    setScreen('drum')
+  }
+
+  const handleStepDone = (): void => {
+    if (!effectiveScale || stepItems.length < 4) return
+    const prog = { scale: effectiveScale, degrees: stepItems.map(i => i.degree) }
+    setCustomProg(prog)
+    setSelectedChordId(null)
+    setDrumOptions(composerEngine.getAllDrumOptions(moodFilter ?? undefined))
     setScreen('drum')
   }
 
   const handleChooseDrum = (drumPatternId: string): void => {
-    if (!selectedMoodId) return
     setSelectedDrumId(drumPatternId)
     setSmartFxOptions(composerEngine.getSmartFxOptions())
     setScreen('smartfx')
   }
 
   const handleChooseSmartFx = (smartFxId: string): void => {
-    if (!selectedMoodId || !selectedChordId || !selectedDrumId) return
+    if (!selectedDrumId) return
+    if (!selectedChordId && !customProg) return
     const blueprint = composerEngine.compose({
-      mood: selectedMoodId,
-      chordProgressionId: selectedChordId,
+      mood:               backingMoodId,
+      chordProgressionId: selectedChordId ?? undefined,
+      customProgression:  customProg ?? undefined,
       drumPatternId:      selectedDrumId,
       smartFxId,
+      bpm,
     })
     startPlay(blueprint)
+  }
+
+  const handleOmakase = (): void => {
+    startPlay(composerEngine.compose({ mood: 'random', bpm }))
   }
 
   const startPlay = (blueprint: SongBlueprint): void => {
@@ -289,9 +358,16 @@ export default function App(): JSX.Element {
     })
   }
 
-  const handleStop = (): void => { playbackEngine.stop() }
+  const handleStop  = (): void => { playbackEngine.stop() }
 
-  const handleRetry = (): void => { setStatus('idle') }
+  const handleRetry = (): void => {
+    setStatus('idle')
+    setScreen('home')
+    setSelectedChordId(null)
+    setCustomProg(null)
+    setStepItems([])
+    setStepScale(null)
+  }
 
   const handleSave = (): void => {
     if (!lastBlueprint || isSaved) return
@@ -309,7 +385,6 @@ export default function App(): JSX.Element {
     setIsSaved(true)
   }
 
-  // ── マイソング ────────────────────────────────────────────────────
   const handleOpenMySongs = (): void => {
     setSongs(SongRepository.loadAll())
     setEditingId(null)
@@ -344,10 +419,10 @@ export default function App(): JSX.Element {
   const handleDeleteSong = (id: string): void => {
     if (editingId === id) setEditingId(null)
     SongRepository.delete(id)
-    setSongs(prev => prev.filter(s => s.id !== id))
+    setSongs(prev => prev.filter(sng => sng.id !== id))
   }
 
-  // ── 読み込み中 ──────────────────────────────────────────────────
+  // ── 読み込み中 ─────────────────────────────────────────────────────────
   if (status === 'loading') {
     return (
       <>
@@ -364,7 +439,7 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── エラー ──────────────────────────────────────────────────────
+  // ── エラー ─────────────────────────────────────────────────────────────
   if (status === 'error') {
     return (
       <>
@@ -377,11 +452,7 @@ export default function App(): JSX.Element {
           <p style={{ color: '#6b7280', fontSize: '0.88rem', marginTop: '6px', textAlign: 'center' as const, lineHeight: 1.6 }}>
             インターネット接続を確認してから<br />もう一度お試しください
           </p>
-          <button
-            className="retry-btn"
-            onClick={() => setStatus('idle')}
-            style={{ ...s.retryBtn, marginTop: '32px' }}
-          >
+          <button className="retry-btn" onClick={() => setStatus('idle')} style={{ ...s.retryBtn, marginTop: '32px' }}>
             もどる
           </button>
         </div>
@@ -389,7 +460,7 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── 再生中 ──────────────────────────────────────────────────────
+  // ── 再生中 ─────────────────────────────────────────────────────────────
   if (status === 'playing') {
     return (
       <>
@@ -404,18 +475,14 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── 完成（ライブラリ再生） ─────────────────────────────────────
+  // ── 完成（ライブラリ再生） ──────────────────────────────────────────────
   if (status === 'done' && playContext === 'library') {
     return (
       <>
         <style>{CSS}</style>
         <div style={s.root}>
           <p style={s.doneText}>🎵 再生完了</p>
-          <button
-            className="retry-btn"
-            onClick={() => setStatus('idle')}
-            style={s.retryBtn}
-          >
+          <button className="retry-btn" onClick={() => setStatus('idle')} style={s.retryBtn}>
             📚 マイソングにもどる
           </button>
         </div>
@@ -423,7 +490,7 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── 完成（作曲） ──────────────────────────────────────────────
+  // ── 完成（作曲） ───────────────────────────────────────────────────────
   if (status === 'done') {
     return (
       <>
@@ -432,7 +499,7 @@ export default function App(): JSX.Element {
           <p style={s.doneText}>🎉 できた！</p>
           <p style={s.doneSubText}>はじめての曲が完成しました</p>
           {isSaved ? (
-            <button disabled style={{...s.saveBtn, opacity: 0.45, cursor: 'default'}}>
+            <button disabled style={{ ...s.saveBtn, opacity: 0.45, cursor: 'default' }}>
               ✅ 保存済み
             </button>
           ) : (
@@ -448,11 +515,8 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── コード選択画面 ──────────────────────────────────────────────────
-  if (screen === 'chord') {
-    const MOOD_LABELS: Record<RealMoodId, string> = {
-      happy: '😊 元気', night: '🌙 夜', rain: '🌧 雨', spring: '🌸 春',
-    }
+  // ── ドラム選択画面 ─────────────────────────────────────────────────────
+  if (screen === 'drum') {
     return (
       <>
         <style>{CSS}</style>
@@ -461,29 +525,36 @@ export default function App(): JSX.Element {
             <button className="back-btn" onClick={() => setScreen('home')} style={s.backBtn}>
               ← もどる
             </button>
-            <h2 style={{ ...s.subTitle, color: '#c4b5fd' }}>
-              {selectedMoodId ? MOOD_LABELS[selectedMoodId] : ''}
+            <h2 style={{ ...s.subTitle, color: '#6ee7b7' }}>
+              {moodFilter ? MOOD_LABELS[moodFilter] : ''}
             </h2>
-            <p style={s.subSubtitle}>コードの雰囲気を選んでください</p>
+            <p style={s.subSubtitle}>リズムの雰囲気を選んでください</p>
           </div>
-
           <div style={s.cardList}>
-            {chordOptions.map((opt) => (
-              <button
-                key={opt.id}
-                className="chord-card-btn"
-                onClick={() => handleChooseChord(opt.id)}
-              >
-                <span style={s.chordLabel}>{opt.label}</span>
-                <span style={s.chordPills}>
-                  {opt.chords.map((ch, ci) => (
-                    <span key={ci} style={s.chordPillWrap}>
-                      <span style={s.chordPill}>{ch}</span>
-                      {ci < opt.chords.length - 1 && (
-                        <span style={s.chordArrow}>→</span>
-                      )}
-                    </span>
-                  ))}
+            {drumOptions.map((opt) => (
+              <button key={opt.id} className="drum-card-btn" onClick={() => handleChooseDrum(opt.id)}>
+                <span style={s.drumIcon}>🥁</span>
+                <span style={s.drumCardBody}>
+                  <span style={s.drumLabel}>{opt.label}</span>
+                  <span style={s.beatRow}>
+                    {opt.beatPattern.map((vel, bi) => {
+                      const hit = vel !== null
+                      const size = hit ? 10 + Math.round((vel ?? 0) * 6) : 10
+                      return (
+                        <span key={bi} style={{
+                          ...s.beatDot,
+                          width:   size,
+                          height:  size,
+                          background: hit
+                            ? `rgba(110,231,183,${0.35 + (vel ?? 0) * 0.65})`
+                            : 'transparent',
+                          border: hit
+                            ? `1.5px solid rgba(110,231,183,${0.4 + (vel ?? 0) * 0.6})`
+                            : '1.5px solid rgba(110,231,183,0.18)',
+                        }} />
+                      )
+                    })}
+                  </span>
                 </span>
               </button>
             ))}
@@ -493,47 +564,8 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── ドラム選択画面 ──────────────────────────────────────────────
-  if (screen === 'drum') {
-    const MOOD_LABELS: Record<RealMoodId, string> = {
-      happy: '😊 元気', night: '🌙 夜', rain: '🌧 雨', spring: '🌸 春',
-    }
-    return (
-      <>
-        <style>{CSS}</style>
-        <div style={s.root}>
-          <div style={s.subHeader}>
-            <button className="back-btn" onClick={() => setScreen('chord')} style={s.backBtn}>
-              ← もどる
-            </button>
-            <h2 style={{ ...s.subTitle, color: '#6ee7b7' }}>
-              {selectedMoodId ? MOOD_LABELS[selectedMoodId] : ''}
-            </h2>
-            <p style={s.subSubtitle}>リズムの雰囲気を選んでください</p>
-          </div>
-
-          <div style={s.cardList}>
-            {drumOptions.map((opt) => (
-              <button
-                key={opt.id}
-                className="drum-card-btn"
-                onClick={() => handleChooseDrum(opt.id)}
-              >
-                <span style={s.drumIcon}>🥁</span>
-                <span style={s.drumLabel}>{opt.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  // ── Smart FX 選択画面 ──────────────────────────────────────────
+  // ── Smart FX 選択画面 ──────────────────────────────────────────────────
   if (screen === 'smartfx') {
-    const MOOD_LABELS: Record<RealMoodId, string> = {
-      happy: '😊 元気', night: '🌙 夜', rain: '🌧 雨', spring: '🌸 春',
-    }
     return (
       <>
         <style>{CSS}</style>
@@ -543,18 +575,13 @@ export default function App(): JSX.Element {
               ← もどる
             </button>
             <h2 style={{ ...s.subTitle, color: '#fde68a' }}>
-              {selectedMoodId ? MOOD_LABELS[selectedMoodId] : ''}
+              {moodFilter ? MOOD_LABELS[moodFilter] : ''}
             </h2>
             <p style={s.subSubtitle}>音の雰囲気を選んでください</p>
           </div>
-
           <div style={s.cardList}>
             {smartFxOptions.map((opt) => (
-              <button
-                key={opt.id}
-                className="smartfx-card-btn"
-                onClick={() => handleChooseSmartFx(opt.id)}
-              >
+              <button key={opt.id} className="smartfx-card-btn" onClick={() => handleChooseSmartFx(opt.id)}>
                 <span style={s.smartFxIcon}>✨</span>
                 <span style={s.smartFxLabel}>{opt.label}</span>
               </button>
@@ -565,7 +592,7 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── ステップアップ画面 ──────────────────────────────────────────
+  // ── ステップアップ画面 ─────────────────────────────────────────────────
   if (screen === 'stepup') {
     return (
       <>
@@ -595,7 +622,7 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── マイソング画面 ──────────────────────────────────────────────
+  // ── マイソング画面 ─────────────────────────────────────────────────────
   if (screen === 'mysongs') {
     return (
       <>
@@ -605,7 +632,7 @@ export default function App(): JSX.Element {
             <button className="back-btn" onClick={() => setScreen('home')} style={s.backBtn}>
               ← もどる
             </button>
-            <h2 style={{...s.subTitle, color: '#6ee7b7'}}>📚 マイソング</h2>
+            <h2 style={{ ...s.subTitle, color: '#6ee7b7' }}>📚 マイソング</h2>
             <p style={s.subSubtitle}>保存した曲の一覧</p>
           </div>
 
@@ -617,18 +644,12 @@ export default function App(): JSX.Element {
           ) : (
             <div style={s.songList}>
               {songs.map((song, i) => (
-                <div
-                  key={song.id}
-                  className="song-card"
-                  style={{...s.songCard, animationDelay: `${i * 0.06}s`}}
-                >
+                <div key={song.id} className="song-card" style={{ ...s.songCard, animationDelay: `${i * 0.06}s` }}>
                   <div style={s.songCardRow}>
-                    {/* アルバムアートプレースホルダー */}
-                    <div style={{...s.artBox, background: MOOD_COLORS[song.mood]}}>
+                    <div style={{ ...s.artBox, background: MOOD_COLORS[song.mood] }}>
                       <span style={s.artEmoji}>{MOOD_MAP[song.mood].emoji}</span>
                     </div>
 
-                    {/* タイトル / 編集インプット */}
                     {editingId === song.id ? (
                       <input
                         className="edit-input"
@@ -644,48 +665,20 @@ export default function App(): JSX.Element {
                     ) : (
                       <div style={s.songInfo}>
                         <p style={s.songTitle}>{song.title}</p>
-                        <p style={s.songMeta}>
-                          {formatDate(song.updatedAt ?? song.createdAt)}
-                        </p>
+                        <p style={s.songMeta}>{formatDate(song.updatedAt ?? song.createdAt)}</p>
                       </div>
                     )}
 
-                    {/* アクションボタン */}
                     {editingId === song.id ? (
                       <div style={s.actionBtns}>
-                        <button
-                          className="save-edit-btn"
-                          onClick={() => handleEditSave(song.id)}
-                          style={{...s.iconBtn, color: '#6ee7b7'}}
-                          title="保存"
-                        >✓</button>
-                        <button
-                          className="delete-song-btn"
-                          onClick={() => setEditingId(null)}
-                          style={s.iconBtn}
-                          title="キャンセル"
-                        >✕</button>
+                        <button className="save-edit-btn" onClick={() => handleEditSave(song.id)} style={{ ...s.iconBtn, color: '#6ee7b7' }} title="保存">✓</button>
+                        <button className="delete-song-btn" onClick={() => setEditingId(null)} style={s.iconBtn} title="キャンセル">✕</button>
                       </div>
                     ) : (
                       <div style={s.actionBtns}>
-                        <button
-                          className="play-song-btn"
-                          onClick={() => handlePlaySaved(song)}
-                          style={s.iconBtn}
-                          title="再生"
-                        >▶</button>
-                        <button
-                          className="edit-song-btn"
-                          onClick={() => handleEditStart(song)}
-                          style={s.iconBtn}
-                          title="タイトルを変更"
-                        >✏</button>
-                        <button
-                          className="delete-song-btn"
-                          onClick={() => handleDeleteSong(song.id)}
-                          style={s.iconBtn}
-                          title="削除"
-                        >✕</button>
+                        <button className="play-song-btn" onClick={() => handlePlaySaved(song)} style={s.iconBtn} title="再生">▶</button>
+                        <button className="edit-song-btn" onClick={() => handleEditStart(song)} style={s.iconBtn} title="タイトルを変更">✏</button>
+                        <button className="delete-song-btn" onClick={() => handleDeleteSong(song.id)} style={s.iconBtn} title="削除">✕</button>
                       </div>
                     )}
                   </div>
@@ -698,45 +691,181 @@ export default function App(): JSX.Element {
     )
   }
 
-  // ── ホーム画面 ──────────────────────────────────────────────────
+  // ── ホーム画面（= コード選択画面） ────────────────────────────────────
   return (
     <>
       <style>{CSS}</style>
-      <div style={s.root}>
-        <button
-          className="mysongs-btn"
-          onClick={handleOpenMySongs}
-          style={s.mysongsEntryBtn}
-        >
+      <div style={s.homeRoot}>
+        {/* 左上・右上 小ボタン */}
+        <button className="mysongs-btn" onClick={handleOpenMySongs} style={s.mysongsEntryBtn}>
           📚 マイソング
         </button>
-        <button
-          className="stepup-btn"
-          onClick={() => setScreen('stepup')}
-          style={s.stepupEntryBtn}
-        >
+        <button className="stepup-btn" onClick={() => setScreen('stepup')} style={s.stepupEntryBtn}>
           🎓 ステップアップ
         </button>
 
-        <header style={s.header}>
+        {/* タイトル */}
+        <header style={{ ...s.header, marginTop: '8px' }}>
           <h1 style={s.title}>First Song</h1>
-          <p style={s.question}>今日はどんな曲を作りますか？</p>
+          <p style={s.question}>コードの雰囲気を選ぼう</p>
         </header>
 
-        <div style={s.grid}>
-          {MOODS.map(({ emoji, label, id }) => (
-            <button key={id} className="mood-btn" onClick={() => handleSelect(id)}>
-              <span style={s.moodEmoji}>{emoji}</span>
-              <span>{label}</span>
+        {/* ムードしぼりこみチップ */}
+        <div style={s.moodChipsRow}>
+          {MOOD_CHIPS.map(({ emoji, label, id }) => (
+            <button
+              key={id}
+              style={{ ...s.moodChip, ...(moodFilter === id ? s.moodChipActive : {}) }}
+              onClick={() => handleMoodFilter(moodFilter === id ? null : id)}
+            >
+              {emoji} {label}
             </button>
           ))}
+          <button
+            style={{ ...s.moodChip, ...(moodFilter === null ? s.moodChipActive : {}) }}
+            onClick={() => handleMoodFilter(null)}
+          >
+            しぼらない
+          </button>
         </div>
 
-        <button
-          className="mood-btn"
-          onClick={() => handleSelect('random')}
-          style={s.wideBtn}
-        >
+        {/* テンポスライダー */}
+        <div style={s.bpmRow}>
+          <span style={s.bpmLabel}>テンポ</span>
+          <input
+            type="range"
+            min={BPM_RANGE.min}
+            max={BPM_RANGE.max}
+            step={BPM_RANGE.step}
+            value={bpm}
+            onChange={e => setBpm(Number(e.target.value))}
+            style={s.bpmSlider}
+          />
+          <span style={s.bpmValue}>{bpm} BPM</span>
+        </div>
+
+        {/* タブ切り替え */}
+        <div style={s.tabRow}>
+          <button
+            style={{ ...s.tabBtn, ...(chordTab === 'template' ? s.tabBtnActive : {}) }}
+            onClick={() => handleTabChange('template')}
+          >
+            テンプレートから選ぶ
+          </button>
+          <button
+            style={{ ...s.tabBtn, ...(chordTab === 'step' ? s.tabBtnActive : {}) }}
+            onClick={() => handleTabChange('step')}
+          >
+            1コードずつ選ぶ
+          </button>
+        </div>
+
+        {/* ── テンプレートタブ ── */}
+        {chordTab === 'template' && (
+          <div style={s.cardList}>
+            {templateOptions.map((opt, i) => (
+              <button
+                key={opt.id}
+                className="chord-card-btn"
+                style={{ animationDelay: `${Math.min(i * 0.04, 0.28)}s` }}
+                onClick={() => handleChooseChord(opt.id)}
+              >
+                <span style={s.chordLabel}>{opt.label}</span>
+                <span style={s.chordPills}>
+                  {opt.chords.map((ch, ci) => (
+                    <span key={ci} style={s.chordPillWrap}>
+                      <span style={s.chordPill}>{ch}</span>
+                      {ci < opt.chords.length - 1 && <span style={s.chordArrow}>→</span>}
+                    </span>
+                  ))}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── ステップタブ ── */}
+        {chordTab === 'step' && (
+          <div style={s.stepContainer}>
+
+            {/* スケール未選択かつムードフィルタなし → 明るい/暗い 選択 */}
+            {!effectiveScale && (
+              <>
+                <p style={s.scaleChoiceLabel}>どんな感じにしますか？</p>
+                <div style={s.scaleChoiceBtns}>
+                  <button
+                    className="chord-card-btn"
+                    style={s.scaleChoiceBtn}
+                    onClick={() => { setStepScale('major'); setStepItems([{ degree: 1, label: 'I' }]) }}
+                  >
+                    ☀️ 明るい感じ
+                  </button>
+                  <button
+                    className="chord-card-btn"
+                    style={s.scaleChoiceBtn}
+                    onClick={() => { setStepScale('minor'); setStepItems([{ degree: 1, label: 'I' }]) }}
+                  >
+                    🌙 暗い感じ
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* 度数ビルダー */}
+            {effectiveScale && (
+              <>
+                {/* 現在の進行チェーン */}
+                {stepItems.length > 0 && (
+                  <div style={s.stepChain}>
+                    {stepItems.map((item, i) => (
+                      <span key={i} style={s.chordPillWrap}>
+                        <span style={{ ...s.chordPill, ...s.stepPill }}>{item.label}</span>
+                        {i < stepItems.length - 1 && <span style={s.chordArrow}>→</span>}
+                      </span>
+                    ))}
+                    {stepItems.length < 8 && <span style={s.stepChainNext}>→ ?</span>}
+                  </div>
+                )}
+
+                {/* 次の度数候補（最大8個まで追加可能） */}
+                {stepItems.length < 8 && (
+                  <div style={s.cardList}>
+                    {nextDegreeOptions.map((opt, i) => (
+                      <button
+                        key={opt.degree}
+                        className="chord-card-btn"
+                        style={{ animationDelay: `${i * 0.06}s` }}
+                        onClick={() => setStepItems(prev => [...prev, { degree: opt.degree, label: opt.label }])}
+                      >
+                        <span style={s.chordLabel}>{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* できたボタン（4個以上から） */}
+                {stepItems.length >= 4 && (
+                  <button className="retry-btn" style={s.stepDoneBtn} onClick={handleStepDone}>
+                    できた ✓
+                  </button>
+                )}
+
+                {/* リセット */}
+                {stepItems.length > 1 && (
+                  <button
+                    style={s.stepResetBtn}
+                    onClick={() => setStepItems([{ degree: 1, label: 'I' }])}
+                  >
+                    最初からやり直す
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* おまかせ */}
+        <button className="mood-btn" onClick={handleOmakase} style={s.omakaseBtn}>
           <span style={s.moodEmoji}>✨</span>
           <span>おまかせ</span>
         </button>
@@ -746,6 +875,7 @@ export default function App(): JSX.Element {
 }
 
 const s = {
+  // ── 再生中・完成・サブ画面共通ルート（垂直中央） ──
   root: {
     minHeight: '100vh',
     display: 'flex',
@@ -759,29 +889,209 @@ const s = {
     color: '#fff',
     position: 'relative' as const,
   },
-  header: { textAlign: 'center' as const, marginBottom: '12px' },
+
+  // ── ホーム画面ルート（上揃えスクロール対応） ──
+  homeRoot: {
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    background: 'radial-gradient(ellipse at 50% 15%, #1a0e40 0%, #08080f 65%)',
+    padding: '64px 24px 48px',
+    gap: '14px',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+    color: '#fff',
+    position: 'relative' as const,
+  },
+
+  // ── タイトル ──
+  header: { textAlign: 'center' as const, marginBottom: '4px' },
   title: {
-    fontSize: 'clamp(2.2rem, 6vw, 3.2rem)',
+    fontSize: 'clamp(2.0rem, 5vw, 2.8rem)',
     fontWeight: 800,
     letterSpacing: '-0.02em',
     background: 'linear-gradient(130deg, #c4b5fd 10%, #67e8f9 90%)',
     WebkitBackgroundClip: 'text' as const,
     WebkitTextFillColor: 'transparent' as const,
     lineHeight: 1.1,
-    marginBottom: '20px',
+    marginBottom: '10px',
   },
-  question: { color: '#d1d5db', fontSize: '1.15rem', fontWeight: 600, letterSpacing: '0.03em' },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+  question: { color: '#d1d5db', fontSize: '1.05rem', fontWeight: 600, letterSpacing: '0.03em' },
+  moodEmoji: { fontSize: '1.6rem', lineHeight: 1 },
+
+  // ── ムードフィルタチップ ──
+  moodChipsRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '8px',
+    justifyContent: 'center',
+    width: '100%',
+    maxWidth: '440px',
+  },
+  moodChip: {
+    padding: '7px 14px',
+    borderRadius: '20px',
+    border: '1.5px solid rgba(255,255,255,0.14)',
+    background: 'rgba(255,255,255,0.04)',
+    color: '#6b7280',
+    fontSize: '0.88rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.18s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+    letterSpacing: '0.03em',
+  },
+  moodChipActive: {
+    background: 'rgba(196,181,253,0.18)',
+    border: '1.5px solid rgba(196,181,253,0.55)',
+    color: '#c4b5fd',
+  },
+
+  // ── BPM スライダー ──
+  bpmRow: {
+    display: 'flex',
+    alignItems: 'center',
     gap: '12px',
     width: '100%',
-    maxWidth: '380px',
+    maxWidth: '440px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '14px',
+    padding: '12px 18px',
   },
-  wideBtn: { flexDirection: 'row' as const, maxWidth: '380px', padding: '20px 32px', gap: '12px' },
-  moodEmoji: { fontSize: '2rem', lineHeight: 1 },
+  bpmLabel: {
+    fontSize: '0.8rem',
+    color: '#6b7280',
+    fontWeight: 600,
+    letterSpacing: '0.05em',
+    flexShrink: 0,
+  },
+  bpmSlider: {
+    flex: 1,
+    cursor: 'pointer',
+  },
+  bpmValue: {
+    fontSize: '0.9rem',
+    color: '#c4b5fd',
+    fontWeight: 700,
+    letterSpacing: '0.02em',
+    flexShrink: 0,
+    minWidth: '58px',
+    textAlign: 'right' as const,
+  },
 
-  // ── ホーム画面：左上・右上の小ボタン ──
+  // ── タブ切り替え ──
+  tabRow: {
+    display: 'flex',
+    gap: '4px',
+    width: '100%',
+    maxWidth: '440px',
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '14px',
+    padding: '4px',
+  },
+  tabBtn: {
+    flex: 1,
+    padding: '10px 8px',
+    borderRadius: '10px',
+    border: 'none',
+    background: 'transparent',
+    color: '#6b7280',
+    fontSize: '0.82rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.18s',
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+    letterSpacing: '0.02em',
+  },
+  tabBtnActive: {
+    background: 'rgba(196,181,253,0.18)',
+    color: '#c4b5fd',
+  },
+
+  // ── ステップモード ──
+  stepContainer: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: '12px',
+    width: '100%',
+    maxWidth: '440px',
+  },
+  scaleChoiceLabel: {
+    fontSize: '1rem',
+    color: '#d1d5db',
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+  },
+  scaleChoiceBtns: {
+    display: 'flex',
+    gap: '10px',
+    width: '100%',
+  },
+  scaleChoiceBtn: {
+    flex: 1,
+    fontSize: '1rem',
+    fontWeight: 700,
+    gap: '8px',
+    padding: '20px 12px',
+    justifyContent: 'center' as const,
+    textAlign: 'center' as const,
+  },
+  stepChain: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap' as const,
+    gap: '6px',
+    width: '100%',
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '14px',
+    minHeight: '48px',
+  },
+  stepPill: {
+    background: 'rgba(196,181,253,0.2)',
+    border: '1.5px solid rgba(196,181,253,0.5)',
+    color: '#c4b5fd',
+    fontWeight: 800,
+  },
+  stepChainNext: {
+    fontSize: '0.85rem',
+    color: '#374151',
+    fontWeight: 600,
+  },
+  stepDoneBtn: {
+    marginTop: '4px',
+    padding: '14px 40px',
+    fontSize: '1.05rem',
+    fontWeight: 700,
+  } as const,
+  stepResetBtn: {
+    padding: '8px 16px',
+    fontSize: '0.78rem',
+    fontWeight: 600,
+    background: 'transparent',
+    border: 'none',
+    color: '#4b5563',
+    cursor: 'pointer',
+    textDecoration: 'underline' as const,
+    fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
+  },
+
+  // ── おまかせ ──
+  omakaseBtn: {
+    flexDirection: 'row' as const,
+    maxWidth: '440px',
+    padding: '14px 24px',
+    gap: '10px',
+    marginTop: '4px',
+    opacity: 0.65,
+  },
+
+  // ── 左上・右上 小ボタン ──
   mysongsEntryBtn: {
     position: 'absolute' as const,
     top: '20px', left: '20px',
@@ -842,11 +1152,15 @@ const s = {
   },
   subSubtitle: { fontSize: '0.9rem', color: '#6b7280', letterSpacing: '0.02em' },
 
-  // ── ステップアップカード ──
+  // ── カードリスト（テンプレート・ドラム・SmartFX 共通） ──
   cardList: {
     display: 'flex', flexDirection: 'column' as const,
-    gap: '12px', width: '100%', maxWidth: '400px', marginTop: '8px',
+    gap: '12px', width: '100%', maxWidth: '440px', marginTop: '4px',
+    maxHeight: '55vh',
+    overflowY: 'auto' as const,
   },
+
+  // ── ステップアップカード ──
   cardTop: { display: 'flex', alignItems: 'center', gap: '10px' },
   cardEmoji: { fontSize: '1.5rem', lineHeight: 1 },
   cardTitle: { fontSize: '1.0rem', fontWeight: 700, color: '#e5e7eb', flex: 1 },
@@ -860,7 +1174,7 @@ const s = {
   },
   cardDesc: { fontSize: '0.85rem', color: '#6b7280', lineHeight: 1.6, letterSpacing: '0.02em', paddingLeft: '2px' },
 
-  // ── マイソング一覧 ──
+  // ── マイソング ──
   songList: {
     display: 'flex', flexDirection: 'column' as const,
     gap: '10px', width: '100%', maxWidth: '420px', marginTop: '8px',
@@ -872,8 +1186,6 @@ const s = {
     padding: '14px 16px',
   },
   songCardRow: { display: 'flex', alignItems: 'center', gap: '14px' },
-
-  // アルバムアートプレースホルダー（64×64）
   artBox: {
     width: '64px', height: '64px',
     borderRadius: '14px',
@@ -882,7 +1194,6 @@ const s = {
     boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
   },
   artEmoji: { fontSize: '1.8rem', lineHeight: 1, userSelect: 'none' as const },
-
   songInfo: { flex: 1, minWidth: 0 },
   songTitle: {
     fontSize: '0.97rem', fontWeight: 700,
@@ -890,8 +1201,6 @@ const s = {
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const,
   },
   songMeta: { fontSize: '0.75rem', color: '#6b7280', marginTop: '5px', letterSpacing: '0.02em' },
-
-  // タイトル編集インプット
   editInput: {
     flex: 1, minWidth: 0,
     background: 'rgba(255,255,255,0.06)',
@@ -904,8 +1213,6 @@ const s = {
     letterSpacing: '0.02em',
     transition: 'border-color 0.15s, background 0.15s',
   },
-
-  // アクションボタン群
   actionBtns: { display: 'flex', gap: '5px', flexShrink: 0 },
   iconBtn: {
     padding: '6px 9px',
@@ -920,31 +1227,30 @@ const s = {
     minWidth: '30px', textAlign: 'center' as const,
   },
 
-  // ── ドラム選択カード ──
-  drumIcon: { fontSize: '1.6rem', lineHeight: 1, flexShrink: 0 },
-  drumLabel: {
-    fontSize: '1.05rem', fontWeight: 700,
-    color: '#6ee7b7', letterSpacing: '0.03em',
+  // ── ドラム選択 ──
+  drumIcon:     { fontSize: '1.6rem', lineHeight: 1, flexShrink: 0 },
+  drumCardBody: { display: 'flex', flexDirection: 'column' as const, gap: '10px' },
+  drumLabel:    { fontSize: '1.05rem', fontWeight: 700, color: '#6ee7b7', letterSpacing: '0.03em' },
+  beatRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  beatDot: {
+    display: 'inline-block',
+    borderRadius: '50%',
+    flexShrink: 0,
+    transition: 'background 0.15s',
   },
 
-  // ── Smart FX 選択カード ──
+  // ── Smart FX 選択 ──
   smartFxIcon: { fontSize: '1.6rem', lineHeight: 1, flexShrink: 0 },
-  smartFxLabel: {
-    fontSize: '1.05rem', fontWeight: 700,
-    color: '#fde68a', letterSpacing: '0.03em',
-  },
+  smartFxLabel: { fontSize: '1.05rem', fontWeight: 700, color: '#fde68a', letterSpacing: '0.03em' },
 
-  // ── コード選択カード ──
-  chordLabel: {
-    fontSize: '1.05rem', fontWeight: 700,
-    color: '#e5e7eb', letterSpacing: '0.03em',
-  },
-  chordPills: {
-    display: 'flex', alignItems: 'center', flexWrap: 'wrap' as const, gap: '6px',
-  },
-  chordPillWrap: {
-    display: 'flex', alignItems: 'center', gap: '6px',
-  },
+  // ── コード進行カード ──
+  chordLabel: { fontSize: '1.05rem', fontWeight: 700, color: '#e5e7eb', letterSpacing: '0.03em' },
+  chordPills: { display: 'flex', alignItems: 'center', flexWrap: 'wrap' as const, gap: '6px' },
+  chordPillWrap: { display: 'flex', alignItems: 'center', gap: '6px' },
   chordPill: {
     display: 'inline-block',
     padding: '4px 12px',
@@ -954,12 +1260,10 @@ const s = {
     fontSize: '0.92rem', fontWeight: 700,
     color: '#c4b5fd', letterSpacing: '0.04em',
   },
-  chordArrow: {
-    fontSize: '0.75rem', color: '#4b5563',
-  },
+  chordArrow: { fontSize: '0.75rem', color: '#4b5563' },
 
   emptyState: { textAlign: 'center' as const, marginTop: '40px', display: 'flex', flexDirection: 'column' as const, gap: '10px' },
-  emptyText: { fontSize: '1.05rem', color: '#4b5563', fontWeight: 600 },
+  emptyText:  { fontSize: '1.05rem', color: '#4b5563', fontWeight: 600 },
   emptySubText: { fontSize: '0.88rem', color: '#374151' },
 
   // ── 再生中・完成 ──
@@ -973,7 +1277,7 @@ const s = {
     fontFamily: "'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif",
     letterSpacing: '0.04em',
   },
-  doneText: { fontSize: '2.4rem', fontWeight: 800, color: '#86efac' },
+  doneText:    { fontSize: '2.4rem', fontWeight: 800, color: '#86efac' },
   doneSubText: { fontSize: '1rem', color: '#6b7280', marginTop: '8px' },
   saveBtn: {
     marginTop: '24px', padding: '14px 48px',

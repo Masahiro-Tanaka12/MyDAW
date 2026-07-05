@@ -56,7 +56,7 @@ export class DrumPlayer {
     }).connect(this.drumVol)
   }
 
-  schedule(track: DrumTrack, totalBars: number): void {
+  schedule(track: DrumTrack): void {
     const { kick, snare, hihat, drumVol, eq3, panner, reverbSend } = this
     if (!kick || !snare || !hihat || !drumVol || !eq3 || !panner || !reverbSend) return
 
@@ -70,29 +70,21 @@ export class DrumPlayer {
       reverbSend.gain.value  = mix.reverb
     }
 
-    for (const event of track.notes) {
+    for (const event of track.kickNotes) {
       Tone.getTransport().schedule((time) => {
         kick.triggerAttackRelease(event.note, event.duration, time, event.velocity)
       }, event.time)
     }
 
-    // スネア: 2・4拍
-    for (let bar = 0; bar < totalBars; bar++) {
-      Tone.getTransport().schedule((time) => { snare!.start(time) }, `${bar}:1:0`)
-      Tone.getTransport().schedule((time) => { snare!.start(time) }, `${bar}:3:0`)
+    for (const event of track.snareNotes) {
+      Tone.getTransport().schedule((time) => { snare!.start(time) }, event.time)
     }
 
-    // ハイハット: 8分音符ごと
-    for (let bar = 0; bar < totalBars; bar++) {
-      for (let beat = 0; beat < 4; beat++) {
-        const onVel = beat % 2 === 0 ? 0.45 : 0.38
-        Tone.getTransport().schedule((time) => {
-          hihat.triggerAttackRelease('32n', time, onVel)
-        }, `${bar}:${beat}:0`)
-        Tone.getTransport().schedule((time) => {
-          hihat.triggerAttackRelease('32n', time, 0.28)
-        }, `${bar}:${beat}:2`)
-      }
+    for (const event of track.hihatNotes) {
+      const vel = event.velocity
+      Tone.getTransport().schedule((time) => {
+        hihat.triggerAttackRelease(event.duration, time, vel)
+      }, event.time)
     }
   }
 

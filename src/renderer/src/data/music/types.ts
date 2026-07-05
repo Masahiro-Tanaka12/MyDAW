@@ -50,8 +50,13 @@ export type BassPatternRecord = {
 }
 
 export type DrumPatternRecord = {
-  id:    string
-  notes: NoteEvent[]
+  id:        string
+  label:     string
+  moodTags?: RealMoodId[]
+  bars:      number       // パターン自身の小節長（基本は1）
+  kick:      NoteEvent[]
+  snare:     NoteEvent[]
+  hihat:     NoteEvent[]
 }
 
 export type InstrumentPresetRecord = {

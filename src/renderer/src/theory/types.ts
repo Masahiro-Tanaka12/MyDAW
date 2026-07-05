@@ -19,6 +19,7 @@ export type UserIntent = {
   smartFxId?: string
   bpm?: number              // 未指定時は mood のデフォルト BPM を使用
   instrumentPresetId?: string
+  customProgression?: { scale: 'major' | 'minor'; degrees: number[] }
 }
 
 // コード進行
@@ -73,10 +74,12 @@ export type BassTrack = {
 }
 
 export type DrumTrack = {
-  kind:       'drum'
-  notes:      NoteEvent[]
-  presetId:   string
-  mixConfig?: MixConfig
+  kind:        'drum'
+  kickNotes:   NoteEvent[]
+  snareNotes:  NoteEvent[]
+  hihatNotes:  NoteEvent[]
+  presetId:    string
+  mixConfig?:  MixConfig
 }
 
 export type TrackLayer = ChordTrack | MelodyTrack | BassTrack | DrumTrack
@@ -121,8 +124,9 @@ export type ProgressionOption = {
 
 // ドラム選択画面に渡すオプション
 export type DrumOption = {
-  id:    string
-  label: string
+  id:          string
+  label:       string
+  beatPattern: (number | null)[]  // 拍0〜3のベロシティ（null=ヒットなし）
 }
 
 // Smart FX 選択画面に渡すオプション

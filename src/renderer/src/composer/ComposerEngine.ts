@@ -1,6 +1,8 @@
 import type { UserIntent, SongBlueprint, RealMoodId, ProgressionOption, DrumOption, SmartFxOption } from '../theory/types'
+import type { ProgressionTemplate }            from '../data/music/types'
 import { moods }                from '../data/music/moods'
 import { progressionTemplates } from '../data/music/progression-templates'
+import { drumPatterns }         from '../data/music/drum-patterns'
 import { SMART_FX_OPTIONS }     from '../data/music/smart-fx'
 import { SCALE_TRANSITIONS }    from '../data/music/theory/transitions'
 import { Selector }             from './Selector'
@@ -13,6 +15,17 @@ import {
 
 const DEGREE_LABELS: Record<number, string> = {
   1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI', 7: 'VII',
+}
+
+function extractBeatPattern(notes: import('../theory/types').NoteEvent[]): (number | null)[] {
+  const beats: (number | null)[] = [null, null, null, null]
+  for (const ev of notes) {
+    const [barStr, beatStr] = ev.time.split(':')
+    if (parseInt(barStr, 10) !== 0) continue
+    const beat = parseInt(beatStr, 10)
+    if (beat >= 0 && beat <= 3) beats[beat] = ev.velocity
+  }
+  return beats
 }
 
 const REAL_MOODS: RealMoodId[] = ['happy', 'night', 'rain', 'spring']
@@ -34,12 +47,18 @@ export class ComposerEngine {
     })
   }
 
-  // ドラム選択画面用: ムードに紐づくドラムパターンの選択肢を返す
+  // ドラム選択画面用: 全パターンから任意のムードフィルタで絞り込む
+  // moodFilter 指定時: moodTags 未設定（共通）または moodTags に含まれるものだけ返す
+  // moodFilter 未指定時: 全パターンを返す
+  getAllDrumOptions(moodFilter?: RealMoodId): DrumOption[] {
+    return Object.values(drumPatterns)
+      .filter(p => !moodFilter || !p.moodTags || p.moodTags.includes(moodFilter))
+      .map(p => ({ id: p.id, label: p.label, beatPattern: extractBeatPattern(p.kick) }))
+  }
+
+  // 後方互換: 単一ムードで絞り込む
   getDrumOptions(moodId: RealMoodId): DrumOption[] {
-    return moods[moodId].drumPatternCandidates.map(c => ({
-      id:    c.id,
-      label: c.label,
-    }))
+    return this.getAllDrumOptions(moodId)
   }
 
   // Smart FX 選択画面用: 全ムード共通の選択肢を返す
@@ -101,7 +120,20 @@ export class ComposerEngine {
       ...(intent.smartFxId          && { smartFxId:     intent.smartFxId }),
     }
 
-    return { ...generate(mood, finalSelection, intent.bpm), seed, moodId }
+    // customProgression が指定されていればその場でテンプレートを組み立てる
+    // 指定なしの場合はカタログから ID で引く
+    const template: ProgressionTemplate = intent.customProgression
+      ? {
+          id:               'custom',
+          scale:            intent.customProgression.scale,
+          degrees:          intent.customProgression.degrees,
+          qualityOverrides: {},
+          bars:             intent.customProgression.degrees.length,
+          alias:            'マイ進行',
+        }
+      : progressionTemplates[finalSelection.progressionId]
+
+    return { ...generate(mood, finalSelection, template, intent.bpm), seed, moodId }
   }
 }
 
